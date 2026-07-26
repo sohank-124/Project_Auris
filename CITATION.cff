@@ -1,0 +1,66 @@
+# This file describes how to cite Project Auris in academic and
+# portfolio contexts. GitHub will surface this metadata in the "Cite
+# this repository" panel, and reference managers (Zotero, Mendeley,
+# Papers) will pick it up automatically.
+#
+# Spec: https://citation-file-format.github.io/
+
+cff-version: 1.2.0
+message: "If you use Project Auris in your research, teaching, or portfolio, please cite it as below."
+title: "Project Auris: FPGA-Accelerated Assistive Audio Platform"
+type: software
+authors:
+  - family-names: <LAST_NAME>
+    given-names: <FIRST_NAME>
+    affiliation: "Project Auris"
+    email: "<you>@example.com"
+license: MIT
+license-url: https://opensource.org/licenses/MIT
+repository-code: https://github.com/<OWNER>/project-auris
+url: https://github.com/<OWNER>/project-auris
+abstract: |
+  Project Auris is an open-source hearing-assistive platform that pairs an
+  ESP32 microcontroller with a Xilinx Spartan-7 FPGA to perform real-time
+  spectral audio processing. A 256-point FFT pipeline applies user-
+  configurable per-bin gain profiles, noise gating, and dynamic range
+  compression for hearing-loss compensation and speech enhancement. The
+  repository includes the SystemVerilog RTL for the FPGA, the ESP-IDF C
+  firmware for the ESP32, Python code generators for window coefficients
+  and audiogram-derived gain tables, schematics and a bill of materials
+  for the reference hardware, and the full design documentation that
+  accompanies the project from skeleton to minimum viable product.
+keywords:
+  - fpga
+  - hearing-aid
+  - dsp
+  - fft
+  - esp32
+  - open-source-hardware
+  - signal-processing
+  - xilinx-spartan-7
+references:
+  - type: software
+    title: "Vivado Design Suite"
+    authors:
+      - name: "Advanced Micro Devices, Inc."
+    year: 2024
+    url: https://www.xilinx.com/products/design-tools/vivado.html
+  - type: software
+    title: "ESP-IDF (Espressif IoT Development Framework)"
+    authors:
+      - name: "Espressif Systems"
+    year: 2024
+    url: https://github.com/espressif/esp-idf
+  - type: software
+    title: "INMP441 — High Performance, Low Power, Digital Output, Omnidirectional MEMS Microphone with I2S Interface"
+    authors:
+      - name: "InvenSense / TDK"
+    year: 2020
+    url: https://invensense.tdk.com/products/digital/inmp441/
+  - type: software
+    title: "PCM5102A — 2.1 VRMS, 112/106/100 dB Audio Stereo DAC with PLL and 32-bit, 384 kHz PCM Interface"
+    authors:
+      - name: "Texas Instruments"
+    year: 2015
+    url: https://www.ti.com/product/PCM5102A
+date-released: "2026-07-01"

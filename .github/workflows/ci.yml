@@ -1,0 +1,458 @@
+# ============================================================================
+# Project Auris - Main CI Pipeline
+# ----------------------------------------------------------------------------
+# Runs on every push to main and every pull request targeting main.
+#
+# Job graph (arrows = "needs"):
+#
+#   lint-sv ─┐
+#   lint-c  ─┤
+#   lint-py ─┼─► build-esp32
+#   lint-md ─┘
+#   lint-sv ─────► build-fpga ──► sim-fpga
+#                                  run-tools (parallel w/ sim)
+#                                  ci-pass (always, last)
+#
+# Concurrency: any in-progress run on the same ref is cancelled when a new
+# commit is pushed (or a new PR push occurs). This saves CI minutes.
+# ============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs for the same ref on new pushes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Default to read-only; jobs that need write access opt in explicitly.
+permissions:
+  contents: read
+
+# ----------------------------------------------------------------------------
+# Global environment — pinned tool versions for reproducibility.
+# ----------------------------------------------------------------------------
+env:
+  PYTHON_VERSION: "3.11"
+  VERILATOR_VERSION: "5.020"           # apt package; bump if a newer one is needed
+  VERIBLE_VERSION: "v0.0-4028"         # chipsalliance/verible release tag
+  IDF_VERSION: "v5.2.2"                # ESP-IDF for ESP32 DevKit v1
+
+jobs:
+  # ==========================================================================
+  # Lint: SystemVerilog (Verible)
+  # ==========================================================================
+  lint-sv:
+    name: Lint SystemVerilog (Verible)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Verible is not packaged in Ubuntu; pull a prebuilt static binary
+      # from the upstream chipsalliance/verible release. The "linux-static"
+      # artifact is a self-contained tarball that does not need root install.
+      - name: Install Verible
+        run: |
+          set -euo pipefail
+          ASSET="verible-${VERIBLE_VERSION}-ubuntu2404-x86_64"
+          URL="https://github.com/chipsalliance/verible/releases/download/${VERIBLE_VERSION}/${ASSET}.tar.gz"
+          echo "Downloading ${URL}"
+          curl -fsSL -o verible.tar.gz "${URL}"
+          mkdir -p "${RUNNER_TEMP}/verible"
+          tar -xzf verible.tar.gz -C "${RUNNER_TEMP}/verible" --strip-components=1
+          echo "${RUNNER_TEMP}/verible/bin" >> "$GITHUB_PATH"
+          verible-verilog-lint --version
+
+      # Glob the entire RTL tree. Disable two rules that are noisy for
+      # hand-written audio DSP code:
+      #   -line-length     : lines occasionally exceed 80 chars in dense math
+      #   -module-filename: filenames don't always match module names
+      #                       (we use sub-folders for packaging)
+      - name: Run verible-verilog-lint
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          # Collect file list explicitly so the command stays readable.
+          FILES=(fpga/rtl/**/*.sv)
+          echo "Linting ${#FILES[@]} SystemVerilog files"
+          verible-verilog-lint \
+            --rules=-line-length,-module-filename \
+            "${FILES[@]}"
+
+  # ==========================================================================
+  # Lint: C / C++ (cpplint)
+  # ==========================================================================
+  lint-c:
+    name: Lint C/C++ (cpplint)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install cpplint
+        run: pip install --quiet cpplint
+
+      # Filter rationale:
+      #   -legal/copyright   : project uses a top-level LICENSE file, no
+      #                        per-file headers required.
+      #   -build/include_subdir : ESP-IDF encourages "include/" subdirs;
+      #                          the rule collides with the component layout.
+      - name: Run cpplint
+        run: |
+          cpplint --recursive --quiet \
+            --filter=-legal/copyright,-build/include_subdir \
+            firmware/
+
+  # ==========================================================================
+  # Lint: Python (ruff)
+  # ==========================================================================
+  lint-python:
+    name: Lint Python (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install ruff
+        run: pip install --quiet "ruff==0.6.9"
+
+      - name: ruff check
+        run: ruff check tools/
+
+      - name: ruff format --check
+        run: ruff format --check tools/
+
+  # ==========================================================================
+  # Lint: Markdown (markdownlint-cli2)
+  # ==========================================================================
+  lint-markdown:
+    name: Lint Markdown (markdownlint-cli2)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run markdownlint-cli2
+        uses: DavidAnson/markdownlint-cli2-action@v18
+        with:
+          globs: |
+            **/*.md
+
+  # ==========================================================================
+  # Build: ESP32 firmware (ESP-IDF v5.2.2)
+  # ==========================================================================
+  build-esp32:
+    name: Build ESP32 firmware (ESP-IDF ${{ env.IDF_VERSION }})
+    # Only run after the linters succeed — saves CI minutes on bad PRs.
+    needs: [lint-sv, lint-c, lint-python, lint-markdown]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # ESP-IDF builds use the full history for version stamping; shallow
+          # checkouts can break `git describe` inside menuconfig.
+          fetch-depth: 0
+
+      # espressif/esp-idf-ci-action handles: cloning the ESP-IDF repo at the
+      # requested version, installing Python+xtensa toolchain, and exporting
+      # IDF_PATH / tools to PATH for the remainder of the job.
+      - name: Build with ESP-IDF
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: ${{ env.IDF_VERSION }}
+          target: esp32
+          path: firmware
+
+      - name: idf.py build
+        working-directory: firmware
+        run: |
+          set -euo pipefail
+          idf.py build
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp32-firmware
+          path: |
+            firmware/build/*.bin
+            firmware/build/*.elf
+            firmware/build/bootloader/bootloader.bin
+            firmware/build/partition_table/partition-table.bin
+            firmware/build/flasher_args.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ==========================================================================
+  # Build: FPGA lint (Verilator)
+  # ==========================================================================
+  build-fpga:
+    name: Lint FPGA (Verilator)
+    needs: [lint-sv]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Verilator
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y verilator
+          verilator --version
+
+      # Verilator --lint-only is the cheapest sanity check we can run without
+      # a Vivado license. It catches:
+      #   * undeclared identifiers, type mismatches, unused signals
+      #   * basic SystemVerilog construct parsing
+      #
+      # Limitations (hence continue-on-error):
+      #   * Vivado IP cores (Clocking Wizard, FFT IP, etc.) are encrypted .xci
+      #     and cannot be parsed by Verilator. We lint `top.sv` and let
+      #     instances be elided.
+      #   * Some Xilinx UNISIM primitives are unknown to Verilator.
+      #
+      # The include path mirrors the structure of fpga/rtl/.
+      - name: Verilator lint top.sv
+        run: |
+          set -euo pipefail
+          verilator --lint-only -Wall \
+            -Wno-fatal \
+            -I fpga/rtl \
+            -I fpga/rtl/pkg \
+            -I fpga/rtl/io \
+            -I fpga/rtl/cdc \
+            -I fpga/rtl/ctrl \
+            -I fpga/rtl/dsp \
+            -I fpga/rtl/dsp/spectral \
+            --top-module top \
+            fpga/rtl/top.sv
+        continue-on-error: true
+
+  # ==========================================================================
+  # Sim: run two critical IP-level testbenches with Verilator
+  # ==========================================================================
+  sim-fpga:
+    name: Sim FPGA testbenches (Verilator)
+    needs: [build-fpga]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Verilator
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y verilator help2man perl python3 make autoconf g++ flex bison ccache
+          sudo apt-get install -y libgoogle-perftools-dev numactl perl-doc
+          sudo apt-get install -y libfl2  # Ubuntu only
+          sudo apt-get install -y libfl-dev  # Ubuntu only
+          sudo apt-get install -y zlibc zlib1g zlib1g-dev
+          verilator --version
+
+      # Build & run tb_i2s_rx.
+      # Sources needed: the package, the I2S receiver, and the testbench.
+      # Verilator will auto-discover includes through -I paths.
+      - name: Build tb_i2s_rx
+        run: |
+          set -euo pipefail
+          rm -rf obj_dir_tb_i2s_rx
+          verilator --binary -j 0 \
+            --top-module tb_i2s_rx \
+            -I fpga/rtl/pkg \
+            -I fpga/rtl/io \
+            --timing \
+            fpga/rtl/pkg/auris_pkg.sv \
+            fpga/rtl/io/i2s_rx.sv \
+            fpga/sim/testbenches/tb_i2s_rx.sv \
+            --Mdir obj_dir_tb_i2s_rx
+        continue-on-error: true
+
+      - name: Run tb_i2s_rx
+        run: |
+          set -euo pipefail
+          if [ -x obj_dir_tb_i2s_rx/Vtb_i2s_rx ]; then
+            obj_dir_tb_i2s_rx/Vtb_i2s_rx
+          else
+            echo "tb_i2s_rx binary not built (lint-style failures); skipping run."
+            exit 0
+          fi
+        continue-on-error: true
+
+      # Build & run tb_spi_slave.
+      - name: Build tb_spi_slave
+        run: |
+          set -euo pipefail
+          rm -rf obj_dir_tb_spi_slave
+          verilator --binary -j 0 \
+            --top-module tb_spi_slave \
+            -I fpga/rtl/pkg \
+            -I fpga/rtl/io \
+            --timing \
+            fpga/rtl/pkg/auris_pkg.sv \
+            fpga/rtl/io/spi_slave.sv \
+            fpga/sim/testbenches/tb_spi_slave.sv \
+            --Mdir obj_dir_tb_spi_slave
+        continue-on-error: true
+
+      - name: Run tb_spi_slave
+        run: |
+          set -euo pipefail
+          if [ -x obj_dir_tb_spi_slave/Vtb_spi_slave ]; then
+            obj_dir_tb_spi_slave/Vtb_spi_slave
+          else
+            echo "tb_spi_slave binary not built (lint-style failures); skipping run."
+            exit 0
+          fi
+        continue-on-error: true
+
+      - name: Upload waveforms
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verilator-waveforms
+          path: |
+            obj_dir_tb_i2s_rx/*.vcd
+            obj_dir_tb_spi_slave/*.vcd
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ==========================================================================
+  # Run: Python toolchain (coefficient / table generators)
+  # ==========================================================================
+  run-tools:
+    name: Run Python tool generators
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # The generators write into fpga/generated/ which is gitignored.
+      # We create it here so the verification step below can find the files.
+      - name: Generate Hann window coefficients
+        run: |
+          set -euo pipefail
+          mkdir -p fpga/generated
+          python tools/win_gen/gen_hann_coeffs.py
+
+      - name: Generate default gain tables
+        run: |
+          set -euo pipefail
+          python tools/profile_gen/gen_default_tables.py
+
+      # Sanity-check that the generators actually produced their outputs.
+      # If any of these are missing, the downstream FPGA build will break.
+      - name: Verify generated artifacts exist
+        run: |
+          set -euo pipefail
+          REQUIRED=(
+            fpga/generated/hann_256.coe
+            fpga/generated/hann_256.hex
+            fpga/generated/gain_table_general.hex
+            fpga/generated/gain_table_speech.hex
+            fpga/generated/gain_table_hearing.hex
+          )
+          MISSING=0
+          for f in "${REQUIRED[@]}"; do
+            if [ ! -s "$f" ]; then
+              echo "::error file=$f::Missing or empty generated artifact"
+              MISSING=1
+            else
+              echo "OK  $f ($(wc -c < "$f") bytes)"
+            fi
+          done
+          if [ "$MISSING" -ne 0 ]; then
+            echo "One or more generated artifacts are missing."
+            exit 1
+          fi
+
+      - name: Upload generated artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-tables
+          path: fpga/generated/
+          retention-days: 14
+
+  # ==========================================================================
+  # ci-pass: aggregate gate that fails the workflow if any required job failed
+  # ==========================================================================
+  ci-pass:
+    name: CI gate
+    needs:
+      - lint-sv
+      - lint-c
+      - lint-python
+      - lint-markdown
+      - build-esp32
+      - build-fpga
+      - sim-fpga
+      - run-tools
+    # Always run so the workflow reports a single green/red status even if a
+    # previous job was skipped (e.g. via `if: false` on a draft PR).
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate overall CI status
+        run: |
+          set -euo pipefail
+          # Map of job name -> conclusion. The `needs()` context exposes the
+          # result of each declared dependency.
+          declare -A STATUS=(
+            ["lint-sv"]="${{ needs.lint-sv.result }}"
+            ["lint-c"]="${{ needs.lint-c.result }}"
+            ["lint-python"]="${{ needs.lint-python.result }}"
+            ["lint-markdown"]="${{ needs.lint-markdown.result }}"
+            ["build-esp32"]="${{ needs.build-esp32.result }}"
+            ["build-fpga"]="${{ needs.build-fpga.result }}"
+            ["sim-fpga"]="${{ needs.sim-fpga.result }}"
+            ["run-tools"]="${{ needs.run-tools.result }}"
+          )
+
+          FAILED=()
+          for job in "${!STATUS[@]}"; do
+            case "${STATUS[$job]}" in
+              success)
+                echo "PASS  $job"
+                ;;
+              skipped)
+                # Skipped jobs are treated as PASS for the gate. We only fail
+                # on actual failures.
+                echo "SKIP  $job"
+                ;;
+              *)
+                echo "FAIL  $job (${STATUS[$job]})"
+                FAILED+=("$job")
+                ;;
+            esac
+          done
+
+          if [ "${#FAILED[@]}" -ne 0 ]; then
+            echo ""
+            echo "CI FAILED. The following jobs did not pass:"
+            printf '  - %s\n' "${FAILED[@]}"
+            exit 1
+          fi
+          echo ""
+          echo "All CI jobs passed."

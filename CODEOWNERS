@@ -1,0 +1,53 @@
+# =============================================================================
+# CODEOWNERS — review routing for Project Auris
+# =============================================================================
+# GitHub uses this file to automatically request reviews from the listed
+# owners when a pull request modifies any of the matched paths. The last
+# matching pattern takes precedence, so order matters: list the most
+# specific patterns last.
+#
+# Replace <OWNER> with the actual GitHub username (or team slug) before
+# the first push. Add additional maintainers as the project grows.
+
+# ---- Default owner for every file in the repository ----
+* @<OWNER>
+
+# ---- CI / GitHub configuration ----
+# Workflows, issue templates, and PR templates are reviewed by the project
+# owner. Tightening this is one of the first things to do once a second
+# maintainer joins.
+.github/        @<OWNER>
+
+# ---- Documentation ----
+# Documentation changes can be reviewed by any maintainer familiar with
+# the project; the default owner is the natural reviewer during early
+# development.
+/docs/          @<OWNER>
+/CONTRIBUTING.md @<OWNER>
+/CHANGELOG.md    @<OWNER>
+/README.md       @<OWNER>
+
+# ---- Hardware design ----
+# Schematics, BOM, mechanical notes, and the wiring guide.
+/hardware/      @<OWNER>
+/docs/hardware/ @<OWNER>
+
+# ---- FPGA ----
+# SystemVerilog RTL, testbenches, constraints, IP, build scripts, and
+# generated artefacts.
+/fpga/          @<OWNER>
+
+# ---- ESP32 firmware ----
+# ESP-IDF C firmware, components, partition tables, and SDK config.
+/firmware/      @<OWNER>
+
+# ---- Tools ----
+# Python code generators and bitstream utilities.
+/tools/         @<OWNER>
+
+# ---- Root meta files ----
+# Top-level governance: the LICENSE is intentionally not assigned to any
+# single owner because it is approved by the project as a whole.
+/LICENSE        @<OWNER>
+/CITATION.cff   @<OWNER>
+/CODEOWNERS     @<OWNER>

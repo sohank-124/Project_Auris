@@ -1,0 +1,109 @@
+# =============================================================================
+# Project Auris — Default parameter set
+# =============================================================================
+# Centralised configuration for the DSP toolchain.  Every numeric knob
+# that appears in ``tools/common/constants.py`` (and a few extras used
+# by the generators / validators) is mirrored here for documentation
+# and for tools that prefer to read a YAML file at startup.
+#
+# This file is intentionally hand-written (no external YAML library
+# is required to parse it).  A subset of keys that are not present
+# here fall back to the constants in :mod:`tools.common.constants`.
+# =============================================================================
+
+system:
+  description: "Audio / DSP frame parameters"
+  fs_hz: 48000
+  n_fft: 256
+  n_bins: 128
+  bin_width_hz: 187.5
+  frame_advance: 128
+  frame_time_ms: 2.6667
+
+fixed_point:
+  description: "Q2.14 fixed-point format"
+  q_frac: 14
+  q_scale: 16384
+  q_min: -32768
+  q_max: 32767
+  one_lsb: 6.103515625e-5
+  range_min: -2.0
+  range_max: 1.99993896484375
+
+audiogram:
+  description: "Standard audiometric frequencies and ranges"
+  frequencies_hz: [250, 500, 1000, 2000, 3000, 4000, 6000]
+  n_bands: 7
+  threshold_min_dbhl: 0.0
+  threshold_max_dbhl: 120.0
+
+gain:
+  description: "Per-channel insertion-gain table"
+  table_depth: 128
+  gain_db_min: -24.0
+  gain_db_max:  24.0
+  formula_default: "nal_r"
+  half_gain: 0.5         # CR used by the simple NAL-R-style model
+
+wdrc:
+  description: "Wide Dynamic Range Compression (per-band)"
+  channels: 16
+  low_knee_db: 25.0
+  high_knee_db: 65.0
+  limit_db: 85.0
+  cr_expansion: 1.5
+  cr_compression: 2.0
+  cr_limiter: 8.0
+  attack_ms: 5.0
+  release_ms: 100.0
+
+latency:
+  description: "DSP pipeline latency budget"
+  target_ms: 10.0
+  budget_ms: 10.0
+  codec_delay_ms: 0.5
+  fft_pipeline_stages: 3
+
+modes:
+  description: "Operating modes supported by mode_ctrl"
+  list: ["general", "hearing", "speech", "bypass"]
+  default: "general"
+
+validation:
+  description: "Per-domain tolerances (LSBs or dB)"
+  tol_coeff_lsb: 0.5
+  tol_fft_lsb: 2.0
+  tol_gain_lsb: 5.0
+  tol_db: 0.1
+  tol_parseval_db: 0.5
+  tol_cola_lsbs: 2
+
+freq_response:
+  description: "Defaults for the frequency-response generators"
+  octave_fraction_default: 3
+  f_min_hz: 20.0
+  f_max_hz: 24000.0
+  fir_default_taps: 64
+  fir_default_window: "hamming"
+  iir_default_order: 4
+  smoothing_default_method: "fractional"
+  smoothing_default_fraction: 3
+  smoothing_gaussian_default_sigma_bins: 2.0
+  smoothing_moving_default_window: 5
+
+test_signals:
+  description: "Defaults for the test-vector generators"
+  default_n_samples: 2048
+  default_seed: 42
+  latency_n_samples: 4096
+  latency_marker_pos: 256
+  latency_chirp_f_start_hz: 100.0
+  latency_chirp_f_stop_hz: 10000.0
+
+paths:
+  description: "Standard output locations"
+  fpga_generated: "fpga/generated"
+  default_test_vector_dir: "test_vectors"
+  default_ir_suite_dir: "ir_test_vectors"
+  default_audiogram_suite_dir: "audiogram_test_vectors"
+  default_latency_signal_prefix: "latency_signal"

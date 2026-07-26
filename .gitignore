@@ -1,0 +1,43 @@
+# Vivado generated
+.Xil/
+.cache/
+.gen/
+.hw/
+.ip_user_files/
+.runs/
+.sim/
+
+# Vivado project directory (Tcl-driven, not committed)
+vivado_proj/
+*.rpt
+
+# Logs
+*.jou
+*.log
+*.str
+
+# Temporary
+*.tmp
+*.backup
+*.bak
+
+# Editor
+.vscode/settings.json
+.vscode/ipch/
+*.swp
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Build artifacts
+*.bit
+*.bin
+*.ltx
+
+# JVM crash dumps
+hs_err_pid*.dmp
+
+# OS
+Thumbs.db

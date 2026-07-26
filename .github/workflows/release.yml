@@ -1,0 +1,215 @@
+# ============================================================================
+# Project Auris - Tagged Release
+# ----------------------------------------------------------------------------
+# Triggered by pushing a tag of the form v* (e.g. v0.1.0, v1.2.3-rc1).
+#
+# Pipeline:
+#   1. checkout full history
+#   2. build ESP32 firmware  (idempotent — produces .bin + .elf)
+#   3. run Python generators (Hann window, default gain tables)
+#   4. collect release artifacts:
+#        - firmware .bin + .elf
+#        - generated .hex / .coe tables
+#        - hardware/bom.csv
+#        - LICENSE
+#        - CHANGELOG.md
+#        packaged into a single tar.gz
+#   5. create / update the GitHub release via softprops/action-gh-release@v2
+#      with auto-generated release notes.
+# ============================================================================
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Tag-triggered runs should never be cancelled by a subsequent push.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# Need write access to create the release and upload assets.
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: "3.11"
+  IDF_VERSION: "v5.2.2"
+  ARTIFACT_DIR: auris-release-artifacts
+
+jobs:
+  release:
+    name: Build & publish release
+    runs-on: ubuntu-latest
+    steps:
+      # Full history is required for `git describe` and for action-gh-release
+      # to compute the changelog between the previous tag and the new one.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Required so actions/checkout puts the tag itself into the working
+          # tree under refs/tags/<tag>, which some tools (and our own
+          # version-stamping) need.
+          ref: ${{ github.ref }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # ------------------------------------------------------------------
+      # 1) Build ESP32 firmware
+      # ------------------------------------------------------------------
+      - name: Build ESP32 firmware
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: ${{ env.IDF_VERSION }}
+          target: esp32
+          path: firmware
+
+      - name: idf.py build
+        working-directory: firmware
+        run: |
+          set -euo pipefail
+          idf.py build
+
+      # ------------------------------------------------------------------
+      # 2) Generate coefficient / table artifacts
+      # ------------------------------------------------------------------
+      - name: Generate Hann window coefficients
+        run: |
+          set -euo pipefail
+          mkdir -p fpga/generated
+          python tools/win_gen/gen_hann_coeffs.py
+
+      - name: Generate default gain tables
+        run: |
+          set -euo pipefail
+          python tools/profile_gen/gen_default_tables.py
+
+      # ------------------------------------------------------------------
+      # 3) Collect & package release artifacts
+      # ------------------------------------------------------------------
+      - name: Stage release artifacts
+        run: |
+          set -euo pipefail
+          rm -rf "${{ env.ARTIFACT_DIR }}"
+          mkdir -p "${{ env.ARTIFACT_DIR }}/firmware"
+          mkdir -p "${{ env.ARTIFACT_DIR }}/generated"
+
+          # Firmware binaries (built by idf.py)
+          cp -v firmware/build/*.bin      "${{ env.ARTIFACT_DIR }}/firmware/" 2>/dev/null || true
+          cp -v firmware/build/*.elf      "${{ env.ARTIFACT_DIR }}/firmware/" 2>/dev/null || true
+          cp -v firmware/build/bootloader/bootloader.bin        "${{ env.ARTIFACT_DIR }}/firmware/" 2>/dev/null || true
+          cp -v firmware/build/partition_table/partition-table.bin "${{ env.ARTIFACT_DIR }}/firmware/" 2>/dev/null || true
+          cp -v firmware/build/flasher_args.json                "${{ env.ARTIFACT_DIR }}/firmware/" 2>/dev/null || true
+
+          # Generated tables (created in step 2)
+          cp -v fpga/generated/*.hex "${{ env.ARTIFACT_DIR }}/generated/" 2>/dev/null || true
+          cp -v fpga/generated/*.coe "${{ env.ARTIFACT_DIR }}/generated/" 2>/dev/null || true
+
+          # Bill of materials (source-controlled CSV in hardware/)
+          if [ -f hardware/bom.csv ]; then
+            cp -v hardware/bom.csv "${{ env.ARTIFACT_DIR }}/"
+          else
+            echo "::warning::hardware/bom.csv not found; skipping."
+          fi
+
+          # Legal & changelog
+          cp -v LICENSE       "${{ env.ARTIFACT_DIR }}/"
+          cp -v CHANGELOG.md  "${{ env.ARTIFACT_DIR }}/"
+
+          # Drop a short README into the tarball so the contents are obvious.
+          cat > "${{ env.ARTIFACT_DIR }}/README.txt" <<EOF
+Project Auris release artifacts
+================================
+
+Contents:
+  firmware/         ESP32 DevKit v1 binaries (bootloader, partition table,
+                    application .bin + .elf, flasher_args.json)
+  generated/        Generated coefficient & gain tables (Hann window, default
+                    gain profiles) for FPGA ROM initialisation
+  bom.csv           Hardware bill of materials
+  LICENSE           MIT license
+  CHANGELOG.md      Project changelog
+EOF
+
+          echo "---- Staged files ----"
+          find "${{ env.ARTIFACT_DIR }}" -type f -printf "%P\n" | sort
+
+      - name: Create tarball
+        run: |
+          set -euo pipefail
+          # The release tag (e.g. v0.1.0) becomes part of the filename so
+          # multiple tagged releases can coexist on the GH release page.
+          TAG="${{ github.ref_name }}"
+          tar -czf "${TAG}.tar.gz" -C "${{ env.ARTIFACT_DIR }}" .
+          ls -lh "${TAG}.tar.gz"
+          # Persist the path for the upload step.
+          echo "TARBALL=${TAG}.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Upload tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-tarball
+          path: ${{ env.TARBALL }}
+          retention-days: 30
+
+      # ------------------------------------------------------------------
+      # 4) Create / update the GitHub release
+      # ------------------------------------------------------------------
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          # generate_release_notes produces the human-readable list of PRs
+          # and authors between the previous tag and this one.
+          generate_release_notes: true
+          # "latest" only when the tag looks like a stable semver (no
+          # pre-release suffix such as -rc1, -beta, etc.). Pre-release tags
+          # are still uploaded but marked accordingly.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(github.ref_name, '-') && 'true' || 'false' }}
+          # All files in the artifact dir go up as release assets, in
+          # addition to the tarball. Order matters only cosmetically.
+          files: |
+            ${{ env.TARBALL }}
+            ${{ env.ARTIFACT_DIR }}/firmware/*.bin
+            ${{ env.ARTIFACT_DIR }}/firmware/*.elf
+            ${{ env.ARTIFACT_DIR }}/firmware/flasher_args.json
+            ${{ env.ARTIFACT_DIR }}/generated/*.hex
+            ${{ env.ARTIFACT_DIR }}/generated/*.coe
+            ${{ env.ARTIFACT_DIR }}/bom.csv
+            ${{ env.ARTIFACT_DIR }}/LICENSE
+            ${{ env.ARTIFACT_DIR }}/CHANGELOG.md
+          body: |
+            ## Project Auris ${{ github.ref_name }}
+
+            Automated release. See `CHANGELOG.md` for the human-curated
+            summary of what changed, and the auto-generated notes below
+            for the full list of merged PRs.
+
+            ### Flashing the ESP32
+
+            ```bash
+            esptool.py --chip esp32 \
+              --port /dev/ttyUSB0 \
+              --baud 460800 \
+              write_flash \
+              0x1000 firmware/bootloader.bin \
+              0x8000 firmware/partition-table.bin \
+              0x10000 firmware/<application>.bin
+            ```
+
+            (The exact application binary name appears in `firmware/`.)
+
+            ### Programming the FPGA
+
+            Use the `.coe` / `.hex` files in `generated/` as BRAM
+            initialisation data inside Vivado.
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

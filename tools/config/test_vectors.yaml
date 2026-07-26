@@ -1,0 +1,101 @@
+# =============================================================================
+# Project Auris — Regression test-vector expected values
+# =============================================================================
+# Reference outputs for the canonical test cases.  When a change to
+# any generator is proposed the regression test compares the freshly
+# emitted tables against these references.  Re-baseline this file
+# only after a deliberate, reviewed change to the algorithm.
+# =============================================================================
+
+# --- Reference audiograms (7 dB-HL thresholds at 250,500,1k,2k,3k,4k,6k Hz) ---
+audiograms:
+  normal:        [0,  0,  0,  0,  0,  0,  0]
+  mild_flat:     [20, 20, 20, 20, 20, 20, 20]
+  mild_hf:       [0,  0, 10, 25, 35, 40, 45]
+  moderate_hf:   [10, 15, 25, 40, 55, 65, 70]
+  severe_hf:     [30, 35, 45, 60, 75, 85, 90]
+  cookie_bite:   [30, 20, 10,  5, 10, 20, 30]
+  reverse_slope: [50, 40, 30, 20, 10,  5,  0]
+  noise_notch:   [5,   5, 10, 30, 40, 25, 10]
+
+# --- Expected insertion gain per band (half-gain NAL-R style: 0.5 * HL) ---
+# These are the per-band insertion gains; the per-bin table is
+# produced by ``Audiogram.to_bin_gains()``.
+expected_insertion_gain_db:
+  normal:        [0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0]
+  mild_flat:     [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0]
+  mild_hf:       [0.0,  0.0,  5.0, 12.5, 17.5, 20.0, 22.5]
+  moderate_hf:   [5.0,  7.5, 12.5, 20.0, 24.0, 24.0, 24.0]
+  severe_hf:     [15.0, 17.5, 22.5, 24.0, 24.0, 24.0, 24.0]
+  cookie_bite:   [15.0, 10.0,  5.0,  2.5,  5.0, 10.0, 15.0]
+  reverse_slope: [24.0, 20.0, 15.0, 10.0,  5.0,  2.5,  0.0]
+  noise_notch:   [2.5,  2.5,  5.0, 15.0, 20.0, 12.5,  5.0]
+
+# --- IR regression test cases ---
+# The test bench in tools/test_vector_gen/gen_impulse_response.py
+# emits a pair of input / output stimuli for each of these IRs.
+ir_test_cases:
+  - name: identity
+    kind: identity
+    length: 256
+    expected_max_abs_output: 1.0
+  - name: delay_10
+    kind: delay
+    delay_samples: 10
+    length: 256
+  - name: delay_64
+    kind: delay
+    delay_samples: 64
+    length: 256
+  - name: lowpass_2k
+    kind: lowpass_fir
+    cutoff_hz: 2000.0
+    n_taps: 64
+    window: hamming
+
+# --- Latency test stimuli ---
+latency_signals:
+  impulse:
+    n_samples: 4096
+    marker_pos: 256
+  chirp:
+    n_samples: 4096
+    f_start_hz: 100.0
+    f_stop_hz:  10000.0
+  multi_marker:
+    n_samples: 4096
+    marker_positions: [256, 1280, 2304, 3328]
+
+# --- Theoretical latency budget expectations (sanity check) ---
+theoretical_latency:
+  n_fft: 256
+  frame_advance: 128
+  fs: 48000
+  pipeline_stages: 3
+  codec_delay_ms: 0.5
+  expected_total_ms: 22.44         # Pre-computed by compute_latency.py
+
+# --- Window metrics (regression targets for the Hann generator) ---
+window_metrics:
+  hann_periodic_256:
+    coherent_gain: 0.5
+    enbw_bins: 1.5                 # 1.5 * N for an N-point Hann
+    scalloping_loss_db: 3.922
+    peak_sidelobe_db: -31.47
+    cola_sum: 128.0                # 256 * 0.5
+
+# --- Gain-table validation thresholds (per-band) ---
+gain_table_checks:
+  max_step_db: 3.0
+  dc_tolerance_db: 0.1
+  monotonic_band: [21, 85]         # 1 kHz .. 4 kHz in 256-pt FFT bins
+  shape_tolerance_db: 3.0
+
+# --- Parseval / COLA tolerances (used by the validation suite) ---
+parseval:
+  float_relative_tol: 1.0e-6
+  fixed_point_tol_lsbs: 4
+cola:
+  float_absolute_tol: 1.0e-6
+  fixed_point_tol_lsbs: 2
+  hop_size: 128

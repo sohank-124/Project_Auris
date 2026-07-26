@@ -1,0 +1,162 @@
+# ----------------------------------------------------------------------------
+# .gitattributes — text/binary classification and line-ending normalisation
+# ----------------------------------------------------------------------------
+# Normalise every text file to LF on commit. The `eol=lf` directive applies
+# to any file Git auto-detects as text, and the explicit `text` lines below
+# also force LF for the file types we care about. CRLF checkouts (Windows)
+# are handled by the repo-level `core.autocrlf` setting on the client side.
+* text=auto eol=lf
+
+# ----------------------------------------------------------------------------
+# Explicit text types — force these extensions to be treated as text and
+# normalised to LF, regardless of any binary-looking content.
+# ----------------------------------------------------------------------------
+# Hardware description and verification
+*.sv    text
+*.svh   text
+*.v     text
+*.vh    text
+*.vhd   text
+*.vhdl  text
+*.xdc   text
+*.tcl   text
+*.do    text
+
+# Firmware
+*.c     text
+*.h     text
+*.cpp   text
+*.hpp   text
+*.cxx   text
+*.cc    text
+*.s     text
+*.S     text
+*.ld    text
+
+# ESP-IDF
+*.cmake text
+CMakeLists.txt text
+
+# Python
+*.py    text
+*.pyi   text
+*.toml  text
+
+# Documentation
+*.md    text
+*.rst   text
+*.txt   text
+
+# Data and configuration
+*.csv   text
+*.tsv   text
+*.json  text
+*.yml   text
+*.yaml  text
+*.xml   text
+*.html  text
+*.css   text
+*.js    text
+*.ts    text
+*.tsx   text
+*.jsx   text
+
+# Build artefacts that are still human-readable
+*.hex   text
+*.coe   text
+*.mif   text
+*.log   text
+*.vcd   text
+*.wdb   text
+*.ltx   text
+*.rpt   text
+
+# ----------------------------------------------------------------------------
+# Binary types — explicitly mark these as binary so Git does not attempt
+# diffs, line-ending conversion, or word-wrap on them.
+# ----------------------------------------------------------------------------
+# FPGA / firmware outputs
+*.bit   binary
+*.bin   binary
+*.elf   binary
+*.mcs   binary
+*.flash binary
+*.zip   binary
+*.gz    binary
+*.tar   binary
+*.7z    binary
+
+# Documentation binaries
+*.pdf   binary
+
+# Images
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.bmp   binary
+*.svg   binary
+*.webp  binary
+*.ico   binary
+
+# 3D / mechanical
+*.step  binary
+*.stp   binary
+*.stl   binary
+*.wrl   binary
+*.obj   binary
+*.3mf   binary
+
+# KiCad (uncomment the Git LFS block below when the files are large enough
+# to warrant it; for the prototype they fit comfortably in plain Git)
+*.kicad_sch  binary
+*.kicad_pcb  binary
+*.kicad_pro  binary
+*.kicad_prl  binary
+*.kicad_mod  binary
+*.kicad_wks  binary
+
+# ----------------------------------------------------------------------------
+# Linguist overrides — make GitHub render the right language badge, syntax
+# highlighting, and "X% is written in Y" breakdown for our unusual file
+# extensions.
+# ----------------------------------------------------------------------------
+*.sv    linguist-language=SystemVerilog
+*.svh   linguist-language=SystemVerilog
+*.xdc   linguist-language=XDC
+*.tcl   linguist-language=Tcl
+*.do    linguist-language=Tcl
+*.coe   linguist-language=COE
+*.mif   linguist-language=MIF
+*.vhd   linguist-language=VHDL
+*.vhdl  linguist-language=VHDL
+CMakeLists.txt linguist-language=CMake
+
+# Vendored or generated directories should not count towards language stats
+fpga/generated/      linguist-generated=true
+fpga/ip/             linguist-vendored=true
+firmware/build/      linguist-generated=true linguist-vendored=true
+firmware/managed_components/ linguist-vendored=true
+
+# ----------------------------------------------------------------------------
+# Diff and merge drivers
+# ----------------------------------------------------------------------------
+# Prefer union merge for generated artefacts (Hann, gain tables) so a
+# feature branch and main can both add new generated files without
+# conflict.
+fpga/generated/*.hex merge=union
+fpga/generated/*.coe merge=union
+fpga/generated/*.mif merge=union
+
+# ----------------------------------------------------------------------------
+# Git LFS placeholders
+# ----------------------------------------------------------------------------
+# Uncomment the lines below once `git lfs install` has been run on the
+# maintainer's machine and the KiCad sources or large reference bitstreams
+# start to exceed GitHub's 100 MB file cap.
+#
+# *.kicad_sch filter=lfs diff=lfs merge=lfs -text
+# *.kicad_pcb filter=lfs diff=lfs merge=lfs -text
+# *.step      filter=lfs diff=lfs merge=lfs -text
+# *.stl       filter=lfs diff=lfs merge=lfs -text
+# *.pdf       filter=lfs diff=lfs merge=lfs -text

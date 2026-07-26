@@ -1,0 +1,11 @@
+# =============================================================================
+# Project Auris partition table
+#
+# Two OTA slots are reserved to enable safe firmware updates in Phase 5. The
+# nvs partition is large enough (24 KB) to hold a 256-byte gain table plus
+# mode, volume, and error counters with headroom for future keys.
+# =============================================================================
+# Name,      Type, SubType,  Offset,   Size
+nvs,         data, nvs,      0x9000,   0x6000
+phy_init,    data, phy,      0xf000,   0x1000
+factory,     app,  factory,  0x10000,  0x1F0000

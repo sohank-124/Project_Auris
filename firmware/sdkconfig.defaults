@@ -1,0 +1,50 @@
+# =============================================================================
+# Project Auris — ESP-IDF sdkconfig.defaults
+# =============================================================================
+
+# ---- CPU --------------------------------------------------------------------
+CONFIG_ESP32_DEFAULT_CPU_FREQ_240=y
+CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ=240
+
+# ---- Memory -----------------------------------------------------------------
+CONFIG_ESP32_HEAP_MIN_DEFAULT_SIZE=65536
+
+# ---- FreeRTOS ---------------------------------------------------------------
+CONFIG_FREERTOS_HZ=1000
+CONFIG_FREERTOS_TIMER_TASK_STACK_SIZE=2048
+CONFIG_FREERTOS_IDLE_TASK_STACK_SIZE=2048
+
+# ---- Logging ----------------------------------------------------------------
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_MAXIMUM_LEVEL_INFO=y
+CONFIG_LOG_COLORS=y
+CONFIG_LOG_TIMESTAMP_SOURCE_RTOS=y
+
+# ---- Partition table --------------------------------------------------------
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x8000
+
+# ---- NVS --------------------------------------------------------------------
+CONFIG_NVS_ENCRYPTION=n
+
+# ---- SPI / I2S / GPIO / ADC drivers (default on; explicit for clarity) ------
+# Note: CONFIG_SPI_MASTER_IN_ISR / CONFIG_SPI_SLAVE_IN_ISR were ESP-IDF
+# v4.x symbols. They have been removed in v5.x; ISR-mode SPI is selected
+# at runtime by passing the appropriate transaction flags to the driver.
+CONFIG_ADC_ONESHOT_CTRL_FUNC_IN_IRAM=y
+
+# ---- WiFi / Bluetooth (off for MVP) -----------------------------------------
+# CONFIG_BT_ENABLED is not set
+# CONFIG_ESP32_WIFI_ENABLED is not set
+
+# ---- Watchdog ---------------------------------------------------------------
+CONFIG_ESP_TASK_WDT=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=5
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=n
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1=n
+
+# ---- Compiler optimizations -------------------------------------------------
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+# Quiet the unused-function warning for inlined helpers
+CONFIG_COMPILER_WARN_UNUSED_FUNCTIONS=n

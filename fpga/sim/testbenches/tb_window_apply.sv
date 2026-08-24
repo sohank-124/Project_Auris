@@ -25,11 +25,11 @@
 //
 //              Clock: 96 MHz
 //
-//              NOTE: the window_rom loads from "fpga/generated/hann_256.hex".
-//              If that file does not exist, the ROM contents are X and the
-//              test will fail. The expected values are computed
-//              mathematically in this testbench so it remains correct
-//              independent of the ROM file.
+//              The DUT's window_rom computes all 256 Hann coefficients at
+//              elaboration time inside an `initial` block using $cos(); it
+//              does NOT load from any external hex file. The expected
+//              values in this testbench are computed mathematically so
+//              they remain correct independent of the ROM contents.
 // =============================================================================
 `default_nettype none
 `timescale 1ns/1ps
@@ -45,6 +45,7 @@ module tb_window_apply;
     logic [23:0] in_l;
     logic [23:0] in_r;
     logic        in_v;
+    logic        frame_start;
     logic [15:0] out_re;
     logic [15:0] out_im;
     logic        out_v;
@@ -53,14 +54,15 @@ module tb_window_apply;
     // DUT instance
     // -------------------------------------------------------------------------
     window_apply #(.LEN(256), .DATA_W(24), .WIN_W(16)) dut (
-        .clk_i    (clk),
-        .rst_n_i  (rst_n),
-        .in_l_i   (in_l),
-        .in_r_i   (in_r),
-        .in_v_i   (in_v),
-        .out_re_o (out_re),
-        .out_im_o (out_im),
-        .out_v_o  (out_v)
+        .clk_i          (clk),
+        .rst_n_i        (rst_n),
+        .in_l_i         (in_l),
+        .in_r_i         (in_r),
+        .in_v_i         (in_v),
+        .frame_start_i  (frame_start),
+        .out_re_o       (out_re),
+        .out_im_o       (out_im),
+        .out_v_o        (out_v)
     );
 
     // -------------------------------------------------------------------------
@@ -144,7 +146,7 @@ module tb_window_apply;
     // VCD dump
     // -------------------------------------------------------------------------
     initial begin
-        $dumpfile("fpga/sim/waveforms/tb_window_apply.vcd");
+        $dumpfile("tb_window_apply.vcd");
         $dumpvars(0, tb_window_apply);
     end
 
@@ -156,10 +158,11 @@ module tb_window_apply;
         int samp_q14;
 
         // ---- Reset --------------------------------------------------------
-        rst_n = 1'b0;
-        in_l  = '0;
-        in_r  = '0;
-        in_v  = 1'b0;
+        rst_n       = 1'b0;
+        in_l        = '0;
+        in_r        = '0;
+        in_v        = 1'b0;
+        frame_start = 1'b0;
         repeat (20) @(posedge clk);
         rst_n = 1'b1;
         repeat (4)  @(posedge clk);

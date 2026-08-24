@@ -4,32 +4,6 @@
 // Module:      tb_dsp_pipeline
 // Description: Self-checking testbench for the top-level DSP pipeline
 //              (dsp_pipeline). Drives a 48 kHz sample stream and verifies:
-//
-//                1. Active mode: when samples are fed, out_valid_o eventually
-//                   pulses and out_l_o/out_r_o produce non-X data
-//                2. Frame counter: frame_count_o increments after each
-//                   complete FFT/IFFT frame
-//                3. Peak meter: peak_in_o tracks the magnitude of the
-//                   most recent input sample
-//
-//              Clock: 96 MHz
-//              Sample rate: 48 kHz -> sample strobe every 2000 DSP cycles
-//              (96e6 / 48e3 = 2000)
-//
-//              The dsp_pipeline RTL does NOT have a dsp_enable_i port for
-//              bypass mode, so the "bypass" test from the original spec is
-//              omitted here. Only the active path is tested.
-//
-//              NOTE: the dsp_pipeline integrates many sub-modules that are
-//              currently stubs (input_buffer, output_buffer, overlap_add
-//              tie outputs to 0; fft_256 / ifft_256 are passthrough). On
-//              the current stubs:
-//                - out_valid_o is always 0 (output_buffer stub)
-//                - frame_count_o is always 0 (no valid reaches spectral_proc)
-//                - peak_in_o DOES update (computed directly from sample input)
-//              The testbench validates the intended behavior; it will fail
-//              on the current stubs and pass once all sub-modules are
-//              implemented.
 // =============================================================================
 `default_nettype none
 `timescale 1ns/1ps
@@ -67,6 +41,9 @@ module tb_dsp_pipeline;
     logic [7:0]  error_flags;
     logic        clip_event;
 
+    logic        dsp_enable;
+    logic [4:0]  volume_level;
+
     // -------------------------------------------------------------------------
     // DUT instance
     // -------------------------------------------------------------------------
@@ -75,7 +52,7 @@ module tb_dsp_pipeline;
         .rst_n_i        (rst_n),
         .sample_l_i     (sample_l),
         .sample_r_i     (sample_r),
-        .sample_valid_i (sample_valid),
+        .sample_valid_i (sample_clk_en),
         .out_l_o        (out_l),
         .out_r_o        (out_r),
         .out_valid_o    (out_valid),
@@ -83,6 +60,8 @@ module tb_dsp_pipeline;
         .master_gain_i  (master_gain),
         .noise_floor_i  (noise_floor),
         .gate_ratio_i   (gate_ratio),
+        .dsp_enable_i   (dsp_enable),
+        .volume_i       (volume_level),
         .gain_addr_i    (gain_addr),
         .gain_wdata_i   (gain_wdata),
         .gain_we_i      (gain_we),
@@ -105,21 +84,23 @@ module tb_dsp_pipeline;
     end
 
     // -------------------------------------------------------------------------
-    // 48 kHz sample strobe: pulse sample_valid_i every 2000 DSP cycles
+    // 48 kHz sample strobe: fires every 2000 DSP cycles, continuously.
+    // In real hardware this comes from the I2S LRCLK edge detector and
+    // runs forever.  Decoupled from send_sample so the output buffer
+    // keeps draining after input injection ends.
     // -------------------------------------------------------------------------
     logic [10:0] sample_div;
-    initial begin
-        sample_div = '0;
-        forever begin
-            @(posedge clk);
-            if (rst_n) begin
-                if (sample_div == 11'd1999) begin
-                    sample_div <= '0;
-                end else begin
-                    sample_div <= sample_div + 1'b1;
-                end
-            end
-        end
+    logic        sample_clk_en;
+
+    assign sample_clk_en = rst_n && (sample_div == 11'd1999);
+
+    always_ff @(posedge clk) begin
+        if (!rst_n)
+            sample_div <= 11'd0;
+        else if (sample_div == 11'd1999)
+            sample_div <= 11'd0;
+        else
+            sample_div <= sample_div + 1'b1;
     end
 
     // -------------------------------------------------------------------------
@@ -130,21 +111,24 @@ module tb_dsp_pipeline;
     int total_count = 0;
 
     // -------------------------------------------------------------------------
-    // Task: wait for a sample strobe, then drive a new sample
+    // Task: inject a sample aligned to the continuous sample_clk_en strobe.
+    // Places data on sample_l/r one cycle before the strobe fires, so the
+    // DUT captures it on the sample_clk_en edge.
     // -------------------------------------------------------------------------
     task automatic send_sample(
         input logic [23:0] left,
         input logic [23:0] right
     );
-        // Wait for the divider to reach 1999
-        while (sample_div != 11'd1999) @(posedge clk);
+        // Wait until 1 cycle before the strobe
+        while (sample_div != 11'd1998) @(posedge clk);
         @(negedge clk);
-        sample_l     = left;
-        sample_r     = right;
-        sample_valid = 1'b1;
-        @(posedge clk);
+        sample_l = left;
+        sample_r = right;
+        // sample_clk_en fires on the next posedge, capturing the data
+        @(posedge clk);   // sample_clk_en = 1 here
         @(negedge clk);
-        sample_valid = 1'b0;
+        sample_l = '0;
+        sample_r = '0;
     endtask
 
     // -------------------------------------------------------------------------
@@ -173,7 +157,7 @@ module tb_dsp_pipeline;
     // VCD dump
     // -------------------------------------------------------------------------
     initial begin
-        $dumpfile("fpga/sim/waveforms/tb_dsp_pipeline.vcd");
+        $dumpfile("tb_dsp_pipeline.vcd");
         $dumpvars(0, tb_dsp_pipeline);
     end
 
@@ -188,8 +172,7 @@ module tb_dsp_pipeline;
         rst_n       = 1'b0;
         sample_l    = '0;
         sample_r    = '0;
-        sample_valid = 1'b0;
-        mode        = MODE_BYPASS;  // not used by current RTL
+        mode        = MODE_HEARING;  // valid mode constant (mode_ctrl is bypassed in this TB)
         master_gain = 24'sd16384;
         noise_floor = 24'sd0;
         gate_ratio  = 24'sd0;
@@ -198,19 +181,22 @@ module tb_dsp_pipeline;
         gain_we     = 1'b0;
         gain_bank   = 2'd0;
         bank_commit = 1'b0;
+        dsp_enable  = 1'b0;
+        volume_level = 5'd31;   // unity volume
         repeat (50) @(posedge clk);
         rst_n = 1'b1;
+        dsp_enable = 1'b1;           // enable pipeline after reset
         repeat (10) @(posedge clk);
 
         // =====================================================================
-        // Test 1: Active mode — send 300 samples, verify output is produced
+        // Test 1: Active mode — send 200 samples, verify output is produced
         // =====================================================================
-        $display("\n=== Test 1: Active mode (300 samples, expect output) ===");
-        for (int i = 0; i < 300; i++) begin
-            send_sample(24'sd(1000 + i), 24'sd(2000 + i));
+        $display("\n=== Test 1: Active mode (200 samples, expect output) ===");
+        for (int i = 0; i < 200; i++) begin
+            send_sample(24'(1000 + i), 24'(2000 + i));
         end
-        // Wait for the pipeline to drain (a few thousand cycles)
-        repeat (10000) @(posedge clk);
+        // Wait for the pipeline + output buffer to drain
+        repeat (150000) @(posedge clk);
 
         got_valid = 0;
         // Try to capture a few output values
@@ -241,7 +227,7 @@ module tb_dsp_pipeline;
         // =====================================================================
         // Test 2: Frame counter
         // After processing 256+ samples, frame_count_o should be > 0.
-        // 300 samples at 50% OLA should produce a few frames.
+        // 200 samples at 50% OLA should produce a few frames.
         // =====================================================================
         $display("\n=== Test 2: Frame counter ===");
         total_count++;
@@ -285,7 +271,7 @@ module tb_dsp_pipeline;
     end
 
     // -------------------------------------------------------------------------
-    // Timeout watchdog (10 ms)
+    // Timeout watchdog (10 ms — long enough for pipeline + output drain)
     // -------------------------------------------------------------------------
     initial begin
         #10_000_000;

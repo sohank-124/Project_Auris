@@ -135,8 +135,9 @@ CMakeLists.txt linguist-language=CMake
 # Vendored or generated directories should not count towards language stats
 fpga/generated/      linguist-generated=true
 fpga/ip/             linguist-vendored=true
-firmware/build/      linguist-generated=true linguist-vendored=true
-firmware/managed_components/ linguist-vendored=true
+# firmware/ linguist rules removed in Phase 5 (FPGA-only migration, 2026-08):
+#   firmware/build/      linguist-generated=true linguist-vendored=true
+#   firmware/managed_components/ linguist-vendored=true
 
 # ----------------------------------------------------------------------------
 # Diff and merge drivers

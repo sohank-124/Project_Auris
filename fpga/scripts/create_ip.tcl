@@ -22,7 +22,7 @@ set ip_dir     [file normalize "${script_dir}/../ip"]
 
 set temp_proj_name "auris_ip_gen"
 set temp_proj_dir  [file join $ip_dir $temp_proj_name]
-set part "xc7s25csga225-1"
+set part "xc7s25csga324-1"
 
 puts "============================================================"
 puts "  Project Auris - IP generation"
@@ -53,20 +53,20 @@ set_property simulator_language Mixed   [current_project]
 #    (FFT), 0 for inverse (IFFT).
 # ---------------------------------------------------------------------------
 set xfft_cfg [list \
-    CONFIG.transform_length          {256} \
-    CONFIG.target_clock_frequency    {96} \
-    CONFIG.input_data_width          {16} \
-    CONFIG.phase_factor_width        {16} \
-    CONFIG.data_format               {FixedPoint} \
-    CONFIG.scaling_options           {Block Floating Point} \
-    CONFIG.rounding_modes            {Convergent Rounding} \
-    CONFIG.architecture              {Pipelined Streaming I/O} \
-    CONFIG.output_ordering           {Natural Order} \
-    CONFIG.throttle                  {Realtime} \
-    CONFIG.aresetn                   {true} \
-    CONFIG.mem_options_data          {Block RAM} \
-    CONFIG.mem_options_phase_factors {Block RAM} \
-    CONFIG.mem_options_hybrid        {false} \
+    CONFIG.transform_length             {256} \
+    CONFIG.target_clock_frequency       {96} \
+    CONFIG.input_width                  {16} \
+    CONFIG.phase_factor_width           {16} \
+    CONFIG.data_format                  {fixed_point} \
+    CONFIG.scaling_options              {block_floating_point} \
+    CONFIG.rounding_modes               {convergent_rounding} \
+    CONFIG.implementation_options       {pipelined_streaming_io} \
+    CONFIG.output_ordering              {natural_order} \
+    CONFIG.throttle_scheme              {realtime} \
+    CONFIG.aresetn                      {true} \
+    CONFIG.memory_options_data          {block_ram} \
+    CONFIG.memory_options_phase_factors {block_ram} \
+    CONFIG.memory_options_hybrid        {false} \
 ]
 
 # ---------------------------------------------------------------------------
@@ -77,6 +77,10 @@ file mkdir $fft_dir
 if {[llength [get_ips fft_256_core]] > 0} {
     remove_ip [get_ips fft_256_core]
 }
+# Wipe the previous output dir so Vivado does not create fft_256_core_N.
+# The -dir target must exist (create_ip does not create it).
+file delete -force $fft_dir
+file mkdir $fft_dir
 puts "Creating IP: fft_256_core ..."
 create_ip -name xfft -vendor xilinx.com -library ip -version 9.1 \
     -module_name fft_256_core \
@@ -93,6 +97,10 @@ file mkdir $ifft_dir
 if {[llength [get_ips ifft_256_core]] > 0} {
     remove_ip [get_ips ifft_256_core]
 }
+# Wipe the previous output dir so Vivado does not create ifft_256_core_N.
+# The -dir target must exist (create_ip does not create it).
+file delete -force $ifft_dir
+file mkdir $ifft_dir
 puts "Creating IP: ifft_256_core ..."
 create_ip -name xfft -vendor xilinx.com -library ip -version 9.1 \
     -module_name ifft_256_core \

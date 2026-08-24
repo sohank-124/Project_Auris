@@ -1,7 +1,31 @@
 # Project Auris — Implementation Plan
 
+> **⚠️ SUPERSEDED — 2026-08-12 FPGA-only migration.** This
+> document was authored for the pre-migration ESP32 + FPGA
+> architecture. The implementation plan below describes the
+> ESP32 firmware integration, the SPI control plane, the
+> Phase 4 BLE telemetry, and the Phase 5 LiPo battery /
+> enclosure path. None of those are in the current build.
+>
+> **The current architecture is FPGA-only** (the Spartan-7
+> FPGA does all signal processing, all control, and is the I²S
+> clock master). Onboard push buttons (BTN0–BTN3) drive inline
+> mode and volume FSMs in `top.sv`. There is no ESP32, no SPI
+> host interface, no BLE, no NVS, no firmware at runtime.
+>
+> **For the current architecture, see**
+> [`docs/fpga_only_architecture.md`](fpga_only_architecture.md).
+> **For a narrative of what changed, see**
+> [`docs/migration_summary.md`](migration_summary.md).
+>
+> This document is retained verbatim for the historical record
+> (it describes how the project *used to* be structured). Do
+> not implement anything described in the Phase 0–6 plan
+> below; the corresponding phases have already landed in the
+> FPGA-only build.
+
 > **Status:** Skeleton complete. Phase 0 (toolchain) starting.
-> **Last updated:** 2026-07
+> **Last updated:** 2026-07 (banner added 2026-08-12)
 
 This document is the single source of truth for the repository layout, the
 phased development plan, the build & tooling instructions, and pointers to
@@ -86,7 +110,7 @@ project-auris/
 │   │   ├── waveforms/                # .vcd / .wdb outputs
 │   │   └── scripts/                  # (older convention; we use fpga/scripts/)
 │   ├── constraints/
-│   │   └── cmod_s7_25.xdc            # Pin assignments + timing
+│   │   └── arty_s7_25.xdc            # Pin assignments + timing
 │   ├── ip/                           # Generated IP cores
 │   │   ├── clk_gen/                  # MMCM .xci
 │   │   ├── fft_256/                  # xfft .xci
@@ -185,7 +209,7 @@ project-auris/
 | `fpga/rtl/cdc/cdc_*.sv`                  | MVP    | Required (stub initially)                        |
 | `fpga/rtl/ctrl/status_mon.sv`            | MVP    | Heartbeat only                                   |
 | `fpga/rtl/clk_gen.sv`                    | MVP    | MMCM                                             |
-| `fpga/constraints/cmod_s7_25.xdc`        | MVP    | Pin map                                          |
+| `fpga/constraints/arty_s7_25.xdc`        | MVP    | Pin map                                          |
 | `fpga/sim/testbenches/tb_*.sv`           | MVP    | Required for verification                        |
 | `firmware/main/main.c`                   | MVP    | Entry point                                      |
 | `firmware/components/spi_master/`        | MVP    | Required for control                             |
@@ -212,7 +236,7 @@ project-auris/
 | Phase | Title                            | Weeks | Goal                                                                |
 |-------|----------------------------------|-------|---------------------------------------------------------------------|
 | 0     | Toolchain setup                  | 1     | Vivado + ESP-IDF installed; "hello world" builds on both            |
-| 1     | FPGA blink                       | 1–2   | Confirm Cmod S7-25 is functional; LED blink @ 1 Hz from MMCM        |
+| 1     | FPGA blink                       | 1–2   | Confirm Arty S7-25 is functional; LED blink @ 1 Hz from MMCM        |
 | 2     | ESP32 ↔ FPGA SPI link            | 1–2   | Read/write the FPGA register file from the ESP32; loopback test     |
 | 3     | I2S audio passthrough            | 2–3   | Mic → FPGA → DAC, no DSP, just verify analog path                  |
 | 4     | **MVP** — DSP with one mode      | 3–4   | 256-pt FFT pipeline running, General mode (flat gain) working       |
@@ -233,7 +257,7 @@ project-auris/
 2. Install ESP-IDF v5.x per official guide; run `idf.py create-project` to
    create a blank project and build.
 3. Create GitHub repo. Push initial commit (skeleton).
-4. Verify Cmod S7-25 driver: connect via USB, run Vivado Hardware Manager.
+4. Verify Arty S7-25 driver: connect via USB, run Vivado Hardware Manager.
 
 **Deliverable**
 - `make all` runs both Vivado and ESP-IDF (though both will be no-ops for now)
@@ -242,7 +266,7 @@ project-auris/
 **Validation**
 - `idf.py build` produces a .bin file under `firmware/build/`
 - `vivado -mode batch -source fpga/scripts/build_project.tcl` produces
-  a bitstream under `fpga/vivado_workspace/auris_cmod.runs/synth_1/top.bit`
+  a bitstream under `fpga/vivado_proj/auris.runs/synth_1/top.bit`
 
 **Risk / go-no-go checkpoint**
 - If Vivado install is too slow or license issues arise, consider the
@@ -252,7 +276,7 @@ project-auris/
 #### Phase 1 — FPGA blink (1–2 weeks)
 
 **Goals**
-- Confirm the FPGA toolchain can target the Cmod S7-25
+- Confirm the FPGA toolchain can target the Arty S7-25
 - Establish a clean synthesis/implementation flow
 
 **Tasks**
@@ -277,7 +301,7 @@ project-auris/
 - Read/write a register on the FPGA from the ESP32
 
 **Tasks**
-1. Wire Cmod S7 Pmod JA ↔ ESP32 DevKit (5 wires: SCLK, MOSI, MISO, CS, GND).
+1. Wire Arty S7 Pmod JA ↔ ESP32 DevKit (5 wires: SCLK, MOSI, MISO, CS, GND).
 2. Implement `spi_slave.sv` and `tb_spi_slave.sv`. Get the testbench to pass
    in xsim.
 3. Implement `reg_file.sv` with a minimal subset (just `REG_VERSION`,
@@ -433,7 +457,7 @@ project-auris/
 - **ESP-IDF v5.1+** with the ESP32 toolchain
 - **Python 3.9+** for the tools
 - **Git**
-- **Cmod S7-25** board + micro-USB cable
+- **Arty S7-25** board + Micro-USB cable
 - **ESP32 DevKit v1** + micro-USB cable
 - (Phase 3 onward) **INMP441**, **PCM5102A**, breadboard, jumpers
 
@@ -467,7 +491,7 @@ vivado -mode batch -source fpga/scripts/sim_i2s_rx.tcl
 make fpga
 
 # Open Vivado GUI for interactive debug
-vivado fpga/vivado_workspace/auris_cmod.xpr
+vivado fpga/vivado_proj/auris.xpr
 
 # Flash the ESP32
 make esp-flash ESP_PORT=/dev/ttyUSB0
@@ -525,7 +549,7 @@ Use Vivado Hardware Manager:
 Or, for command-line programming, use `openFPGALoader` (open source):
 
 ```bash
-openFPGALoader -b cmod_s7 top.bit
+openFPGALoader -b arty_s7 top.bit
 ```
 
 ### Flashing the ESP32
@@ -567,7 +591,7 @@ one-line description. Each file has its own detailed header comment.
 | `fpga/rtl/dsp/ifft_256.sv`                   | AXI-Stream IFFT wrapper                           | Stub       |
 | `fpga/rtl/dsp/overlap_add.sv`                | 50% OLA reconstructor                             | Skeleton   |
 | `fpga/rtl/dsp/spectral/spectral_proc.sv`     | Per-bin gain + noise gate                         | Skeleton   |
-| `fpga/constraints/cmod_s7_25.xdc`            | Pin map + timing constraints                      | Reference  |
+| `fpga/constraints/arty_s7_25.xdc`            | Pin map + timing constraints                      | Reference  |
 | `fpga/sim/testbenches/tb_i2s_rx.sv`          | I2S RX testbench                                  | Skeleton   |
 | `fpga/sim/testbenches/tb_spi_slave.sv`       | SPI slave testbench                               | Skeleton   |
 | `fpga/scripts/build_project.tcl`             | Vivado non-project build                          | Skeleton   |
@@ -674,7 +698,7 @@ listed in `docs/college_app/`.
 1. Read this entire document (it should take ~30 min).
 2. Set up the toolchain (Phase 0). Start the Vivado download immediately —
    it's the long pole.
-3. Order hardware: Cmod S7-25, ESP32 DevKit v1, INMP441, PCM5102A,
+3. Order hardware: Arty S7-25, ESP32 DevKit v1, INMP441, PCM5102A,
    breadboard, jumpers.
 4. Open `fpga/rtl/top.sv` and read it through. Open the package file
    (`auris_pkg.sv`) and internalize the register map. From there, follow

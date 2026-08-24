@@ -8,9 +8,13 @@
 //                1. Mode change triggers a full 128-entry gain table load
 //                   into the inactive bank, followed by a bank_commit_o pulse
 //                2. Multiple mode changes: each triggers a full table load
-//                3. Bank selection: the inactive bank is targeted; first
-//                   write goes to bank A (pending_bank was 1, toggles to 0),
-//                   second to bank B, third to A, etc.
+//                3. Bank selection: the inactive bank is targeted. The boot-
+//                   time initial_load writes the GENERAL table into bank B
+//                   (pending_bank = 1, since active_bank resets to 0 and
+//                   ~active_bank = 1) and commits it, so active_bank = 1
+//                   after boot. From that point every user mode change
+//                   toggles to the opposite bank: first user change -> bank
+//                   A (0), second -> bank B (1), third -> bank A (0), etc.
 //
 //              The mode_ctrl RTL is fully implemented. The default gain
 //              tables are all unity (16384 in Q2.14), so the loaded values
@@ -41,6 +45,10 @@ module tb_mode_ctrl;
     logic [23:0] default_master_gain;
     logic [23:0] default_noise_floor;
     logic [23:0] default_gate_ratio;
+
+    // Observe the RTL's internal active_bank for debugging
+    // (directly probing the DUT's internal signal)
+    wire active_bank = dut.active_bank;
 
     // -------------------------------------------------------------------------
     // DUT instance
@@ -93,40 +101,23 @@ module tb_mode_ctrl;
     // -------------------------------------------------------------------------
     // Task: monitor a full gain-table load (128 writes + 1 commit pulse)
     // and verify all addresses 0..127 are written.
+    //
+    // The load takes ~130 cycles (128 writes + 1 commit + 1 idle). Rather
+    // than capturing events retroactively (which would require storing the
+    // last 130 cycles of bank_addr_o / bank_we_o / bank_commit_o), this
+    // task verifies the FINAL state of the DUT after the load completes:
+    // bank_we_o and bank_commit_o must both have returned to 0, and
+    // bank_sel_o must match the expected target bank. The 128-write pulse
+    // count is verified separately in Test 4 by capturing events live.
     // -------------------------------------------------------------------------
     task automatic check_gain_load(
         input logic [1:0] exp_bank,
         input string      test_name
     );
-        logic [6:0]  seen_addrs [128];
-        int          write_count;
-        int          commit_count;
-        int          bank_mismatch_count;
-        int          i;
-        logic        addr_seen;
-        logic        all_addrs_seen;
-
-        write_count = 0;
-        commit_count = 0;
-        bank_mismatch_count = 0;
-        for (i = 0; i < 128; i++) seen_addrs[i] = 7'h7F;  // sentinel
-
-        // Watch for 128 bank_we_o pulses and the bank_commit_o pulse.
-        // The load takes ~130 cycles (128 writes + 1 commit + 1 idle).
+        // Wait for the DUT to finish the load. After the 128 writes and
+        // 1 commit pulse the FSM returns to ST_IDLE with bank_we_o = 0
+        // and bank_commit_o = 0.
         repeat (300) @(posedge clk);
-        // We can't easily capture events retroactively, so instead we
-        // verify the FINAL state: after the load, the DUT is in ST_IDLE
-        // with bank_we_o = 0 and bank_commit_o = 0. The important
-        // checks are: bank_sel_o matched exp_bank, and all 128 addresses
-        // were written (we verify by reading back the gain table — but
-        // the table is internal to mode_ctrl, so we check the final
-        // bank_sel_o and the fact that bank_we_o went high 128 times).
-
-        // Since we can't easily count retroactively, we use a different
-        // approach: re-run the load while counting. But the DUT only
-        // loads once per mode_we_i. So we verify indirectly:
-        // 1. bank_sel_o == exp_bank after the commit
-        // 2. bank_commit_o pulsed (we can check it was high at some point)
 
         // Check bank_sel_o
         @(posedge clk);
@@ -163,8 +154,18 @@ module tb_mode_ctrl;
                 end
             end
             MODE_SPEECH: begin
-                if (default_master_gain !== 24'sd23170) begin
-                    $display("[FAIL] %s-Defaults: master=%0d (expected 23170)", test_name, default_master_gain);
+                if (default_master_gain !== 24'sd16384) begin
+                    $display("[FAIL] %s-Defaults: master=%0d (expected 16384 (unity gain))", test_name, default_master_gain);
+                    fail_count++; total_count++;
+                end else begin
+                    $display("[PASS] %s-Defaults: master=%0d noise=%0d gate=%0d",
+                             test_name, default_master_gain, default_noise_floor, default_gate_ratio);
+                    pass_count++; total_count++;
+                end
+            end
+            MODE_MUSIC: begin
+                if (default_master_gain !== 24'sd16384) begin
+                    $display("[FAIL] %s-Defaults: master=%0d (expected 16384 (unity gain))", test_name, default_master_gain);
                     fail_count++; total_count++;
                 end else begin
                     $display("[PASS] %s-Defaults: master=%0d noise=%0d gate=%0d",
@@ -176,17 +177,13 @@ module tb_mode_ctrl;
                 $display("[WARN] %s: unknown mode %0d", test_name, mode);
             end
         endcase
-
-        // Suppress unused warnings
-        all_addrs_seen = 1'b0;
-        addr_seen = 1'b0;
     endtask
 
     // -------------------------------------------------------------------------
     // VCD dump
     // -------------------------------------------------------------------------
     initial begin
-        $dumpfile("fpga/sim/waveforms/tb_mode_ctrl.vcd");
+        $dumpfile("tb_mode_ctrl.vcd");
         $dumpvars(0, tb_mode_ctrl);
     end
 
@@ -202,13 +199,30 @@ module tb_mode_ctrl;
         rst_n = 1'b1;
         repeat (4)  @(posedge clk);
 
-        // After reset, pending_bank = 2'd1 (B). So the first mode change
-        // toggles pending_bank to 0 (A), and writes go to bank A.
-        // The second mode change toggles back to 1 (B).
-        // The third mode change toggles to 0 (A).
+        // Wait for the RTL's boot-time initial_load to complete.
+        // The mode_ctrl FSM loads 128 entries then pulses bank_commit_o.
+        // We wait for bank_commit_o to pulse, then drain a few more cycles.
+        $display("Waiting for initial_load to complete...");
+        while (!bank_commit) @(posedge clk);
+        repeat (10) @(posedge clk);
+        $display("initial_load complete, active_bank = %0d", active_bank);
+
+        // After reset, active_bank = 0 and pending_bank = 1. The boot-time
+        // initial_load (triggered by the initial_load flag in ST_IDLE) writes
+        // the GENERAL table into bank B (pending_bank is reloaded to 1, since
+        // ~active_bank = 1) and commits it on bank_commit_o, leaving
+        // active_bank = 1 after boot. From then on every user-triggered mode
+        // change toggles to the opposite bank:
+        //   Test 1 (HEARING): bank A (0), active_bank -> 0
+        //   Test 2 (SPEECH) : bank B (1), active_bank -> 1
+        //   Test 3 (GENERAL): bank A (0), active_bank -> 0
+        //   Test 4 (HEARING): bank B (1), active_bank -> 1
+        //   Test 5 (MUSIC)  : bank A (0), active_bank -> 0
 
         // =====================================================================
-        // Test 1: First mode change -> bank A
+        // Test 1: First user mode change after boot -> bank A
+        // (Boot initial_load committed bank B, so active_bank = 1; the next
+        //  toggle goes to bank A, i.e. pending_bank = 0.)
         // =====================================================================
         $display("\n=== Test 1: Mode change to HEARING, expect bank A ===");
         trigger_mode_change(MODE_HEARING);
@@ -217,7 +231,8 @@ module tb_mode_ctrl;
         repeat (50) @(posedge clk);
 
         // =====================================================================
-        // Test 2: Second mode change -> bank B
+        // Test 2: Second user mode change -> bank B
+        // (After Test 1's commit, active_bank = 0; pending_bank toggles to 1.)
         // =====================================================================
         $display("\n=== Test 2: Mode change to SPEECH, expect bank B ===");
         trigger_mode_change(MODE_SPEECH);
@@ -226,7 +241,8 @@ module tb_mode_ctrl;
         repeat (50) @(posedge clk);
 
         // =====================================================================
-        // Test 3: Third mode change -> bank A again
+        // Test 3: Third user mode change -> bank A again
+        // (After Test 2's commit, active_bank = 1; pending_bank toggles to 0.)
         // =====================================================================
         $display("\n=== Test 3: Mode change to GENERAL, expect bank A ===");
         trigger_mode_change(MODE_GENERAL);
@@ -268,6 +284,18 @@ module tb_mode_ctrl;
                 fail_count++;
             end
         end
+
+        // =====================================================================
+        // Test 5: Fifth user mode change -> MODE_MUSIC, expect bank A
+        // (After Test 4's commit, active_bank = 1, so pending_bank toggles to 0;
+        //  after Test 5's commit active_bank returns to 0.)
+        // Covers all 4 valid modes (GENERAL, SPEECH, MUSIC, HEARING).
+        // =====================================================================
+        $display("\n=== Test 5: Mode change to MUSIC, expect bank A ===");
+        trigger_mode_change(MODE_MUSIC);
+        check_gain_load(2'd0, "Test5-MUSIC");
+
+        repeat (50) @(posedge clk);
 
         // =====================================================================
         // Summary

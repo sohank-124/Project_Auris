@@ -85,20 +85,6 @@ module cdc_dsp_to_i2s import auris_pkg::*; #(
     assign rd_empty_o = rd_empty;
 
     // -------------------------------------------------------------------------
-    // Default initial values (for sim determinism only).
-    // -------------------------------------------------------------------------
-    initial begin
-        wr_ptr_bin    = '0;
-        wr_ptr_gray   = '0;
-        rd_ptr_gray_a = '0;
-        rd_ptr_gray_b = '0;
-        rd_ptr_bin    = '0;
-        rd_ptr_gray   = '0;
-        wr_ptr_gray_a = '0;
-        wr_ptr_gray_b = '0;
-    end
-
-    // -------------------------------------------------------------------------
     // Write-side sequential logic
     // -------------------------------------------------------------------------
     always_ff @(posedge wr_clk_i or negedge wr_rst_n_i) begin

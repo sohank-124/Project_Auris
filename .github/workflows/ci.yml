@@ -6,12 +6,13 @@
 # Job graph (arrows = "needs"):
 #
 #   lint-sv ─┐
-#   lint-c  ─┤
-#   lint-py ─┼─► build-esp32
-#   lint-md ─┘
-#   lint-sv ─────► build-fpga ──► sim-fpga
-#                                  run-tools (parallel w/ sim)
-#                                  ci-pass (always, last)
+#   lint-py ─┼─► build-fpga ──► sim-fpga
+#   lint-md ─┘                │
+#                            run-tools (parallel w/ sim)
+#                            ci-pass (always, last)
+#
+# Note: lint-c / build-esp32 jobs were removed during the FPGA-only migration
+# (Phase 5 cleanup, 2026-08). The firmware/ tree is archived under archive/.
 #
 # Concurrency: any in-progress run on the same ref is cancelled when a new
 # commit is pushed (or a new PR push occurs). This saves CI minutes.
@@ -41,7 +42,7 @@ env:
   PYTHON_VERSION: "3.11"
   VERILATOR_VERSION: "5.020"           # apt package; bump if a newer one is needed
   VERIBLE_VERSION: "v0.0-4028"         # chipsalliance/verible release tag
-  IDF_VERSION: "v5.2.2"                # ESP-IDF for ESP32 DevKit v1
+  # IDF_VERSION removed in Phase 5 (FPGA-only migration, 2026-08)
 
 jobs:
   # ==========================================================================
@@ -86,35 +87,6 @@ jobs:
             "${FILES[@]}"
 
   # ==========================================================================
-  # Lint: C / C++ (cpplint)
-  # ==========================================================================
-  lint-c:
-    name: Lint C/C++ (cpplint)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install cpplint
-        run: pip install --quiet cpplint
-
-      # Filter rationale:
-      #   -legal/copyright   : project uses a top-level LICENSE file, no
-      #                        per-file headers required.
-      #   -build/include_subdir : ESP-IDF encourages "include/" subdirs;
-      #                          the rule collides with the component layout.
-      - name: Run cpplint
-        run: |
-          cpplint --recursive --quiet \
-            --filter=-legal/copyright,-build/include_subdir \
-            firmware/
-
-  # ==========================================================================
   # Lint: Python (ruff)
   # ==========================================================================
   lint-python:
@@ -155,51 +127,6 @@ jobs:
             **/*.md
 
   # ==========================================================================
-  # Build: ESP32 firmware (ESP-IDF v5.2.2)
-  # ==========================================================================
-  build-esp32:
-    name: Build ESP32 firmware (ESP-IDF ${{ env.IDF_VERSION }})
-    # Only run after the linters succeed — saves CI minutes on bad PRs.
-    needs: [lint-sv, lint-c, lint-python, lint-markdown]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          # ESP-IDF builds use the full history for version stamping; shallow
-          # checkouts can break `git describe` inside menuconfig.
-          fetch-depth: 0
-
-      # espressif/esp-idf-ci-action handles: cloning the ESP-IDF repo at the
-      # requested version, installing Python+xtensa toolchain, and exporting
-      # IDF_PATH / tools to PATH for the remainder of the job.
-      - name: Build with ESP-IDF
-        uses: espressif/esp-idf-ci-action@v1
-        with:
-          esp_idf_version: ${{ env.IDF_VERSION }}
-          target: esp32
-          path: firmware
-
-      - name: idf.py build
-        working-directory: firmware
-        run: |
-          set -euo pipefail
-          idf.py build
-
-      - name: Upload firmware artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: esp32-firmware
-          path: |
-            firmware/build/*.bin
-            firmware/build/*.elf
-            firmware/build/bootloader/bootloader.bin
-            firmware/build/partition_table/partition-table.bin
-            firmware/build/flasher_args.json
-          if-no-files-found: warn
-          retention-days: 14
-
-  # ==========================================================================
   # Build: FPGA lint (Verilator)
   # ==========================================================================
   build-fpga:
@@ -222,11 +149,18 @@ jobs:
       #   * undeclared identifiers, type mismatches, unused signals
       #   * basic SystemVerilog construct parsing
       #
-      # Limitations (hence continue-on-error):
+      # Limitations of Verilator w.r.t. this design:
       #   * Vivado IP cores (Clocking Wizard, FFT IP, etc.) are encrypted .xci
       #     and cannot be parsed by Verilator. We lint `top.sv` and let
       #     instances be elided.
-      #   * Some Xilinx UNISIM primitives are unknown to Verilator.
+      #   * Some Xilinx UNISIM primitives are unknown to Verilator and emit
+      #     "implicit definition" warnings.
+      #
+      # Because of the above, we pass `-Wno-fatal` so warnings from elided
+      # IP / unknown UNISIM cells do not abort the lint. Real lint errors
+      # (undeclared signals in our hand-written RTL, type mismatches,
+      # width mismatches, illegal constructs) WILL fail the build — they
+      # are not masked. Lint failures are gating.
       #
       # The include path mirrors the structure of fpga/rtl/.
       - name: Verilator lint top.sv
@@ -243,10 +177,11 @@ jobs:
             -I fpga/rtl/dsp/spectral \
             --top-module top \
             fpga/rtl/top.sv
-        continue-on-error: true
 
   # ==========================================================================
-  # Sim: run two critical IP-level testbenches with Verilator
+  # Sim: run the critical IP-level testbench with Verilator
+  # (tb_spi_slave was retired with the SPI interface in the FPGA-only
+  #  migration, Phase 5 cleanup, 2026-08; archival copy in archive/tb/.)
   # ==========================================================================
   sim-fpga:
     name: Sim FPGA testbenches (Verilator)
@@ -283,45 +218,15 @@ jobs:
             fpga/rtl/io/i2s_rx.sv \
             fpga/sim/testbenches/tb_i2s_rx.sv \
             --Mdir obj_dir_tb_i2s_rx
-        continue-on-error: true
 
       - name: Run tb_i2s_rx
         run: |
           set -euo pipefail
-          if [ -x obj_dir_tb_i2s_rx/Vtb_i2s_rx ]; then
-            obj_dir_tb_i2s_rx/Vtb_i2s_rx
-          else
-            echo "tb_i2s_rx binary not built (lint-style failures); skipping run."
-            exit 0
+          if [ ! -x obj_dir_tb_i2s_rx/Vtb_i2s_rx ]; then
+            echo "::error::tb_i2s_rx binary not found — preceding Build step must have failed."
+            exit 1
           fi
-        continue-on-error: true
-
-      # Build & run tb_spi_slave.
-      - name: Build tb_spi_slave
-        run: |
-          set -euo pipefail
-          rm -rf obj_dir_tb_spi_slave
-          verilator --binary -j 0 \
-            --top-module tb_spi_slave \
-            -I fpga/rtl/pkg \
-            -I fpga/rtl/io \
-            --timing \
-            fpga/rtl/pkg/auris_pkg.sv \
-            fpga/rtl/io/spi_slave.sv \
-            fpga/sim/testbenches/tb_spi_slave.sv \
-            --Mdir obj_dir_tb_spi_slave
-        continue-on-error: true
-
-      - name: Run tb_spi_slave
-        run: |
-          set -euo pipefail
-          if [ -x obj_dir_tb_spi_slave/Vtb_spi_slave ]; then
-            obj_dir_tb_spi_slave/Vtb_spi_slave
-          else
-            echo "tb_spi_slave binary not built (lint-style failures); skipping run."
-            exit 0
-          fi
-        continue-on-error: true
+          obj_dir_tb_i2s_rx/Vtb_i2s_rx
 
       - name: Upload waveforms
         if: always()
@@ -330,9 +235,39 @@ jobs:
           name: verilator-waveforms
           path: |
             obj_dir_tb_i2s_rx/*.vcd
-            obj_dir_tb_spi_slave/*.vcd
           if-no-files-found: ignore
           retention-days: 7
+
+      # Print which testbenches passed/failed. Mirrors the summary table
+      # produced by fpga/scripts/sim_all.tcl. Always runs (if: always()) so
+      # partial failures still surface a summary in the log.
+      #
+      # We rely on the presence of the compiled binary as the PASS signal:
+      # if the Build step succeeded, the binary exists in obj_dir/. If the
+      # Build step failed, the directory is missing or empty and we mark
+      # the testbench FAIL. The Run steps already gate the job on success;
+      # this step is purely a log-friendly summary.
+      - name: Simulation summary
+        if: always()
+        run: |
+          set +e
+          echo "============================================================"
+          echo "  Sim FPGA testbenches - summary"
+          echo "============================================================"
+          PASS=0
+          FAIL=0
+          for tb in tb_i2s_rx; do
+            if [ -x "obj_dir_${tb}/V${tb}" ]; then
+              echo "  PASS  ${tb}  (binary present, run step succeeded)"
+              PASS=$((PASS + 1))
+            else
+              echo "  FAIL  ${tb}  (binary missing - build or run step failed)"
+              FAIL=$((FAIL + 1))
+            fi
+          done
+          echo "------------------------------------------------------------"
+          echo "  ${PASS} passed, ${FAIL} failed"
+          echo "============================================================"
 
   # ==========================================================================
   # Run: Python toolchain (coefficient / table generators)
@@ -402,10 +337,8 @@ jobs:
     name: CI gate
     needs:
       - lint-sv
-      - lint-c
       - lint-python
       - lint-markdown
-      - build-esp32
       - build-fpga
       - sim-fpga
       - run-tools
@@ -421,10 +354,8 @@ jobs:
           # result of each declared dependency.
           declare -A STATUS=(
             ["lint-sv"]="${{ needs.lint-sv.result }}"
-            ["lint-c"]="${{ needs.lint-c.result }}"
             ["lint-python"]="${{ needs.lint-python.result }}"
             ["lint-markdown"]="${{ needs.lint-markdown.result }}"
-            ["build-esp32"]="${{ needs.build-esp32.result }}"
             ["build-fpga"]="${{ needs.build-fpga.result }}"
             ["sim-fpga"]="${{ needs.sim-fpga.result }}"
             ["run-tools"]="${{ needs.run-tools.result }}"

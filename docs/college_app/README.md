@@ -2,7 +2,8 @@
 
 > **Project Auris** — Materials for college application essays,
 > demonstrations, and interviews.
-> **Last updated:** 2026-07
+> **Last updated:** 2026-08-12 (FPGA-only migration: swept ESP32
+> references; recast as pure FPGA/DSP engineering narrative)
 > **Status:** Authoritative. The headline college-app material is
 > the working prototype, the GitHub repository, and the demo
 > video; this document collects the *writing* artifacts (essays,
@@ -15,6 +16,16 @@ version below expands the essay topics into 5 fully developed
 angles, adds a real artifact checklist with status tracking, an
 IEEE-format technical-report outline, a per-college tailoring
 guide, and a timeline aligned with the application deadlines.
+
+The current architecture is **FPGA-only**: a single Spartan-7
+FPGA does all signal processing, all control, and is the I²S
+clock master. There is no ESP32, no firmware at runtime, no SPI
+host interface, no Bluetooth, and no battery. Onboard push
+buttons drive inline mode and volume FSMs in the FPGA's RTL.
+See [`docs/fpga_only_architecture.md`](../fpga_only_architecture.md)
+for the canonical architecture reference and
+[`docs/migration_summary.md`](../migration_summary.md) for the
+narrative of what changed.
 
 For the **demo plan** (the second-by-second script for the live
 demo), see [`docs/DEMO_PLAN.md`](../DEMO_PLAN.md). For the
@@ -35,16 +46,17 @@ readers and interviewers are looking for three things, all of
 which this project delivers:
 
 1. **Genuine technical depth.** A 256-point FFT pipeline on an
-   FPGA, a 4-wire SPI bus to a microcontroller, a 3-mode
-   audiogram-based gain controller, BLE, NVS persistence — this
-   is a senior-thesis-sized project, not a weekend hack.
+   FPGA, two clock domains with asynchronous FIFO crossings,
+   four pre-computed per-mode gain tables, and a full
+   verification suite — this is a senior-thesis-sized project,
+   not a weekend hack.
 2. **Follow-through.** The repository is fully documented, the
-   measurements are reproducible, the build instructions work on
-   a fresh machine. The author didn't just build it; they
+   measurements are reproducible, the build instructions work
+   on a fresh machine. The author didn't just build it; they
    *finished* it.
 3. **Mission.** Hearing-assistive technology is a real social
    need; 1 in 5 people over 65 has disabling hearing loss, and
-   prescription hearing aids cost $4,000–$8,000. A $120
+   prescription hearing aids cost $4,000–$8,000. A $110
    open-source alternative is a meaningful contribution.
 
 The rest of this document is the *how*: which essay to write,
@@ -53,34 +65,35 @@ specific colleges, and when each piece should be ready.
 
 ### 1.1 The 30-second elevator pitch
 
-> "Project Auris is a $120 open-source hearing aid that I built
-> from scratch: an FPGA does real-time spectral processing, a
-> microcontroller owns the user interface, and the whole thing
-> runs on two AA batteries. It's not as polished as a
-> prescription hearing aid, but it's a real working device that
-> does audiogram-based gain shaping, and every part of it is
-> documented and reproducible. I built it because hearing aids
-> are too expensive for the people who need them most."
+> "Project Auris is a $110 open-source hearing aid that I built
+> from scratch: a single Spartan-7 FPGA does real-time
+> spectral processing, generates its own I²S clocks, and runs
+> the whole user interface from four onboard push buttons.
+> It's not as polished as a prescription hearing aid, but it's
+> a real working device that does audiogram-based gain
+> shaping, and every part of it is documented and
+> reproducible. I built it because hearing aids are too
+> expensive for the people who need them most."
 
 ### 1.2 The 2-minute interview pitch
 
 > "Project Auris is an FPGA-accelerated hearing-assistive
 > device. The audio chain is microphone → 256-point FFT → per-
 > frequency-bin gain table → IFFT → overlap-add → DAC →
-> headphones. The control chain is a 4-wire SPI bus from an
-> ESP32, which owns the user interface — three buttons, a BLE
-> radio, and a non-volatile store for the user's profile. The
-> whole thing fits on a breadboard and costs $116 in parts. The
-> latency is 5.3 milliseconds — well below the threshold for
-> detecting audio delay in headphones. The end-to-end signal-
-> to-noise ratio is 60 dB. The resource utilisation is 58
-> percent of the FPGA's logic, 19 percent of its block RAM,
-> and 25 percent of its DSP slices. I built it over the past
-> year, in 6 phases, with a working demo at the end of each
-> phase. The code is open source on GitHub, and the
-> documentation — the architecture, the design decisions, the
-> measurement methodology, the demo plan — is the work I'd put
-> in front of a technical reviewer."
+> headphones. The FPGA is the sole processor — it generates
+> the I²S clocks, runs the pipeline, and reads four onboard
+> push buttons for mode and volume. The whole thing fits on a
+> breadboard and costs $101 in parts. The latency is 5.3
+> milliseconds — well below the threshold for detecting audio
+> delay in headphones. The end-to-end signal-to-noise ratio
+> is 60 dB. The resource utilisation is 58 percent of the
+> FPGA's logic, 19 percent of its block RAM, and 17 percent
+> of its DSP slices. I built it over the past year, in 6
+> phases, with a working demo at the end of each phase. The
+> code is open source on GitHub, and the documentation — the
+> architecture, the design decisions, the measurement
+> methodology, the demo plan — is the work I'd put in front
+> of a technical reviewer."
 
 ---
 
@@ -101,18 +114,19 @@ the headphones."
 
 **Narrative:** The essay traces the engineering of the DSP
 pipeline. The first challenge is the FFT itself: 256-point
-pipelined streaming at 96 MHz on a $75 FPGA with 14,620 LUTs.
+pipelined streaming at 96 MHz on a $59 FPGA with 14,620 LUTs.
 The FFT IP uses 3,000 of those, twice (for FFT and IFFT), and
 the spectral processor needs another 500. The author has to
 make the 8,500-LUT budget work. The second challenge is the
-clock-domain crossing: the I2S microphone runs at 3.072 MHz
-from the ESP32; the DSP runs at 96 MHz from the FPGA's MMCM.
-Asynchronous FIFOs with Gray-coded pointers, validated with a
-4-deep buffer and a 4-µs worst-case latency. The third challenge
-is the COLA property of the Hann window — the moment the author
-realises that the Bypass mode is audibly transparent *by
-construction*, and that the 50 % overlap-add is the key, is the
-climax.
+clock-domain crossing: the I²S bit clock and the DSP clock are
+mutually asynchronous from a CDC perspective (even though the
+BCLK is technically derived from the MMCM, the conservative
+choice is to treat them as asynchronous). Asynchronous FIFOs
+with Gray-coded pointers, validated with a 4-deep buffer and a
+~4-µs worst-case latency. The third challenge is the COLA
+property of the Hann window — the moment the author realises
+that the General mode is audibly transparent *by construction*,
+and that the 50 % overlap-add is the key, is the climax.
 
 **Featured scenes:**
 
@@ -150,7 +164,7 @@ be built by anyone with a soldering iron and a weekend. The
 essay does *not* oversell: it acknowledges that Project Auris
 is a prototype, not a medical device, and that the regulatory
 path to a real hearing aid is long. But it makes the case that
-the *infrastructure* — the FPGA, the firmware, the
+the *infrastructure* — the FPGA, the RTL, the
 documentation — is in place, and that a non-profit or a
 research group could pick it up and run.
 
@@ -180,7 +194,7 @@ itself — what was planned vs what happened, what went wrong,
 what the author would do differently. The 6-phase development
 plan is the protagonist; the essay walks through each phase
 and the surprises that emerged. The first surprise: the
-toolchain install (Vivado WebPack, ESP-IDF, the various Python
+toolchain install (Vivado WebPack, the various Python
 packages) took 3 weeks, not 3 days. The second surprise: the
 INMP441 was discontinued halfway through the project; the
 project had to identify the SPH0645 as a drop-in replacement.
@@ -226,9 +240,9 @@ a future user needs to validate it; every design decision is
 recorded because a future maintainer needs to know *why*.
 The essay also reflects on what the project has *received*
 from the open-source community: the Xilinx xfft IP, the
-ESP-IDF, the FreeRTOS kernel, the INMP441 application notes,
-the PCM5102A evaluation documentation. The author is one
-contributor in a long chain.
+Vivado toolchain, the INMP441 application notes, the PCM5102A
+evaluation documentation. The author is one contributor in
+a long chain.
 
 **Featured scenes:**
 
@@ -255,16 +269,18 @@ realise I don't have to choose."
 **Narrative:** The essay explores the *interdisciplinary*
 nature of the project. The DSP theory (Fourier analysis, window
 functions, COLA, Parseval's theorem) is grounded in the math
-classroom. The embedded systems work (FreeRTOS, I2S, SPI, BLE,
-NVS) is grounded in the computer-science classroom. The
-hardware design (FPGA, schematics, PCB layout, soldering) is
-grounded in the maker space. The essay makes the case that
-the most interesting problems — and the most interesting
-projects — sit at the intersection of disciplines. The author
-wants to study electrical and computer engineering (or
-computer science and mathematics, or biomedical engineering)
-because Project Auris has shown them that the boundary between
-fields is where the fun is.
+classroom. The digital design work (SystemVerilog RTL, clock-
+domain crossing, timing closure, async FIFOs, BRAM inference)
+is grounded in the computer-science and electrical-engineering
+classrooms. The hardware integration (FPGA bring-up, I²S codec
+wiring, breadboard debugging, scope probing) is grounded in
+the maker space. The essay makes the case that the most
+interesting problems — and the most interesting projects —
+sit at the intersection of disciplines. The author wants to
+study electrical and computer engineering (or computer
+science and mathematics, or biomedical engineering) because
+Project Auris has shown them that the boundary between fields
+is where the fun is.
 
 **Featured scenes:**
 
@@ -310,20 +326,21 @@ checklist, fallback scenarios, talking points) is in
 version is:
 
 1. **Show the breadboard** (5 s). "This is Project Auris: an
-   FPGA, a microcontroller, a microphone, and a DAC, on a
-   breadboard, for $116 in parts."
-2. **Bypass mode** (5 s). "Right now the FPGA is in passthrough;
-   whatever the mic hears, the headphones play."
+   FPGA, a microphone, and a DAC, on a breadboard, for $101
+   in parts. The FPGA does everything — signal processing
+   and the user interface."
+2. **General mode** (5 s). "Right now we're in General mode —
+   flat unity gain. Whatever the mic hears, the headphones
+   play, with no colouring."
 3. **Hearing mode** (10 s). "Now I'll switch to a mode that
    compensates for high-frequency hearing loss. Listen to the
    difference."
-4. **Telemetry** (5 s). "The FPGA is running a 256-point FFT at
-   96 MHz. The serial monitor shows 188 frames per second,
-   peak input, peak output — all in real time."
+4. **Volume control** (5 s). "The third button raises the
+   volume — 31 levels. The fourth button lowers it."
 5. **Q&A** (5 s). "Happy to take questions."
 
 For the longer (5–6 minute) version with the architecture
-walkthrough and the BLE control demo, see
+walkthrough and the full four-mode demonstration, see
 [`docs/DEMO_PLAN.md`](../DEMO_PLAN.md) §3.
 
 ---
@@ -391,11 +408,11 @@ Phase 5).
 A self-contained summary of the project, the design, and the
 key results. Written last, placed first. Covers: motivation
 (hearing-assistive, low cost, open source), architecture
-(FPGA + microcontroller, FFT-based spectral processing),
-key metrics (5.3 ms latency, 60 dB SNR, 58 % LUT
-utilisation, $116 BOM), and significance (a reproducible
-prototype that demonstrates the feasibility of low-cost,
-high-performance hearing-assistive devices).
+(FPGA-only, FFT-based spectral processing, onboard push
+buttons for mode and volume), key metrics (5.3 ms latency,
+60 dB SNR, 58 % LUT utilisation, $101 BOM), and significance
+(a reproducible prototype that demonstrates the feasibility
+of low-cost, high-performance hearing-assistive devices).
 
 ### 5.2 Section 2: Introduction & Motivation
 
@@ -403,49 +420,56 @@ The human need: 1 in 5 people over 65 has disabling hearing
 loss; prescription hearing aids cost $4,000–$8,000; untreated
 hearing loss correlates with accelerated cognitive decline.
 The technical need: real-time DSP on a resource-constrained
-FPGA, with deterministic sub-10 ms latency, multi-modal
+FPGA, with deterministic sub-10 ms latency, multi-mode
 configuration, and a small BOM. The contribution of this
 work: an open-source, end-to-end prototype that demonstrates
-all of the above.
+all of the above with no external microcontroller and no
+firmware to flash.
 
 ### 5.3 Section 3: System Architecture
 
-The high-level architecture: ESP32 (control plane) + Cmod
-S7-25 (signal-processing plane), connected by a 4-wire SPI
-bus. The audio chain: INMP441 → I2S RX → CDC → 256-pt FFT →
-per-bin gain → IFFT → 50 % overlap-add → I2S TX → PCM5102A.
-The control chain: 3 buttons + BLE → ESP32 → SPI → register
-file → spectral processor. The clock domains: 12 MHz crystal,
-96 MHz MMCM, 3.072 MHz I2S, 10 MHz SPI, with Gray-coded
-asynchronous FIFOs at the boundaries. The full Mermaid
-diagram from [`docs/architecture/block_diagram.md`](../architecture/block_diagram.md)
+The high-level architecture: a single Arty S7-25 (signal-
+processing + control plane) plus two audio codecs (INMP441
+mic, PCM5102A DAC). The audio chain: INMP441 → I2S RX → CDC
+FIFO → 256-pt FFT → per-bin gain → IFFT → 50 % overlap-add →
+volume_ctrl → CDC FIFO → I2S TX → PCM5102A. The control
+chain: 4 onboard push buttons → btn_debounce → inline FSMs
+in `top.sv` → mode_ctrl (gain-table swap) and volume_ctrl.
+The clock domains: 12 MHz crystal → MMCM → 96 MHz DSP clock
++ fractional-divider 3.072 MHz I²S BCLK + ÷64 LRCLK, with
+two Gray-coded asynchronous FIFOs at the I²S↔DSP boundary.
+The full Mermaid diagram from
+[`docs/architecture/block_diagram.md`](../architecture/block_diagram.md)
 goes here as Figure 1.
 
 ### 5.4 Section 4: DSP Pipeline Design
 
 The mathematical details: the Hann window and the COLA
-property; the FFT (pipelined streaming, BFP); the per-bin
-gain and the noise gate; the IFFT (with the 1/N scaling
-absorbed into the gain table); the overlap-add
-reconstruction. The fixed-point arithmetic: Q2.14 for
-gains, 16-bit two's-complement for samples. The latency
-budget: 5.33 ms algorithmic + ~1 ms I2S codec + ~1 ms
-analog = ~7–8 ms total. The resource budget: 8,500 LUTs,
-12 BRAMs, 14 DSP48E1s, all under the XC7S25's available
-resources. The full per-stage table from
+property; the FFT (pipelined streaming, BFP, Xilinx xfft
+v9.1 IP); the per-bin gain and the noise gate; the IFFT
+(with the 1/N scaling absorbed into the gain table); the
+overlap-add reconstruction; the volume stage. The fixed-
+point arithmetic: Q2.14 for gains, 16-bit two's-complement
+for samples, 5-bit volume (0..31) mapped linearly to Q2.14.
+The latency budget: 5.33 ms algorithmic + ~1 ms I2S codec +
+~1 ms analog = ~7–8 ms total. The resource budget: 8,500
+LUTs, 12 BRAMs, 14 DSP48E1s, all under the XC7S25's
+available resources. The full per-stage table from
 [`docs/architecture/dsp_pipeline.md`](../architecture/dsp_pipeline.md) §5
 goes here as Table 1.
 
-### 5.5 Section 5: Implementation (FPGA + ESP32)
+### 5.5 Section 5: Implementation (FPGA only)
 
-The FPGA implementation: SystemVerilog RTL, Xilinx xfft IP,
-the asynchronous FIFOs, the register file, the spectral
-processor. The firmware implementation: ESP-IDF, FreeRTOS,
-8 tasks, the mode state machine, the NVS persistence, the
-BLE GATT server. The build flow: Vivado non-project mode,
-ESP-IDF `idf.py`, Python tools for the Hann coefficients
-and the default gain tables. The verification flow:
-xsim testbenches, end-to-end loopback tests, the full
+The FPGA implementation: SystemVerilog RTL, Xilinx xfft v9.1
+IP, the two asynchronous FIFOs (I²S↔DSP, both directions),
+the spectral processor with dual-bank BRAM, the inline
+mode and volume FSMs in `top.sv`, the `mode_ctrl.sv` table
+loader with pre-computed per-mode gain tables, the
+`volume_ctrl.sv` Q2.14 multiplier, the `btn_debounce.sv`
+push-button debouncer. The build flow: Vivado non-project
+mode, Python tools for the Hann coefficients and the
+default gain tables. The verification flow: xsim
+testbenches, end-to-end loopback tests, the full
 measurement suite from
 [`docs/MEASUREMENT_METHODOLOGY.md`](../MEASUREMENT_METHODOLOGY.md).
 A photo of the assembled breadboard goes here as Figure 2.
@@ -467,32 +491,34 @@ The limitations: the INMP441 is discontinued (R-01); the
 breadboard prototype is not a wearable form factor; the
 project does not have a regulatory clearance; the latency
 is fixed at 5.33 ms by the FFT length; the resource budget
-is tight. The future work: a custom PCB and a 3D-printed
-enclosure (Phase 5); WDRC and a feedback canceller (Phase
-6); a smartphone app for audiogram upload; a clinical
-evaluation with hearing-loss participants.
+is tight; per-mode gain tables are pre-computed and cannot
+be tuned at runtime. The future work: a custom PCB and a
+3D-printed enclosure (Phase 5); WDRC and a feedback canceller
+(Phase 6); a smartphone app for audiogram upload (would
+talk to the FPGA via a separate BLE bridge, not in the
+FPGA-only build); a clinical evaluation with hearing-loss
+participants.
 
 ### 5.8 Section 8: Conclusion
 
 A short (1-paragraph) summary of the contribution: a
-working, open-source, $116 hearing-assistive prototype
+working, open-source, $106.60 hearing-assistive prototype
 that demonstrates real-time FPGA-based spectral audio
-processing with sub-10 ms latency, three configurable
-listening modes, and Bluetooth control. The
-documentation, the ADRs, the measurement methodology,
-and the demo plan are the project's *other* deliverables;
-together they make the project reproducible and
-reviewable.
+processing with sub-10 ms latency, four pre-computed
+listening modes (General, Speech, Music, Hearing), and
+onboard push-button control. The documentation, the ADRs,
+the measurement methodology, and the demo plan are the
+project's *other* deliverables; together they make the
+project reproducible and reviewable.
 
 ### 5.9 Section 9: References
 
 A standard IEEE-format reference list. Key citations:
-Xilinx xfft IP documentation; INMP441 datasheet;
-PCM5102A datasheet; ESP-IDF programming guide; the
-Hann window's original publication; the COLA proof from
-Crochiere and Rabiner's *Multirate Digital Signal
-Processing*; the FreeRTOS reference manual; the
-MIT licence text.
+Xilinx xfft IP v9.1 documentation; INMP441 datasheet;
+PCM5102A datasheet; the Hann window's original publication;
+the COLA proof from Crochiere and Rabiner's *Multirate
+Digital Signal Processing*; the Digilent Arty S7-25
+reference manual; the MIT licence text.
 
 ---
 
@@ -537,9 +563,9 @@ applications are prepared.
 
 ### 6.4 Carnegie Mellon (ECE / CS)
 
-- **Frame:** the project combines the CS skills (firmware,
-  tooling, CI) and the ECE skills (RTL, signal processing,
-  PCB) that CMU's interdisciplinary programs value.
+- **Frame:** the project combines the CS skills (tooling,
+  CI, verification) and the ECE skills (RTL, signal
+  processing, CDC) that CMU's interdisciplinary programs value.
 - **Highlight:** the *open-source workflow* — CMU has a
   strong culture of open-source contribution.
 - **Tailor:** lead with essay 2.4 (open-source
@@ -573,20 +599,21 @@ deadline; everything else is bonus.
 | Date | Milestone | Application relevance |
 |------|-----------|------------------------|
 | 2026-09 | Phase 2 complete (MVP) | First EA / ED applications can include the MVP demo |
-| 2026-10 | Phase 3 complete (spectral processing) | Most EA / ED applications are due; include the three-mode demo |
-| 2026-11 | Phase 4 complete (BLE, telemetry) | RD applications: full feature set |
+| 2026-10 | Phase 3 complete (spectral processing) | Most EA / ED applications are due; include the four-mode demo |
+| 2026-11 | Phase 4 complete (enclosure, polish) | RD applications: full feature set |
 | 2026-12 | Demo video recorded; technical report written | RD applications: full artifact set |
-| 2027-01 | Phase 5 complete (enclosure, polish) | Post-application polish; not needed for applications but useful for interviews |
+| 2027-01 | Phase 5 complete (custom PCB, DRC) | Post-application polish; not needed for applications but useful for interviews |
 | 2027-03 | Interviews begin | All artifacts ready |
 
 ### 7.1 Application-deadline-aware strategy
 
 - **EA / ED applicants (Nov 1 / Nov 15 deadlines):** ship
-  the MVP (Phase 2 complete) plus the Hearing and Speech
-  modes (Phase 3 partially complete). The demo video can be
+  the MVP (Phase 2 complete) plus three of the four modes
+  (Phase 3 partially complete). The demo video can be
   shorter (90 s); the technical report can be 2–3 pages.
 - **RD applicants (Jan 1 / Jan 15 deadlines):** ship the
-  full Phase 4 (BLE, telemetry, NVS persistence). The demo
+  full Phase 4 (four modes, volume control, OLED status
+  indicator). The demo
   video is 3 min; the technical report is the full 6-page
   IEEE paper.
 - **Interviews (March–April):** the Phase 5 enclosure and

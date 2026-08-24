@@ -1,10 +1,34 @@
 # Development Roadmap
 
+> **⚠️ SUPERSEDED — 2026-08-12 FPGA-only migration.** This
+> document was authored for the pre-migration ESP32 + FPGA
+> architecture. The 6-phase plan below describes the ESP32
+> firmware integration, the BLE GATT server, the NVS profile
+> persistence, the LiPo battery integration, and the custom
+> PCB / 3D-printed enclosure path. None of those are in the
+> current build.
+>
+> **The current architecture is FPGA-only** (the Spartan-7
+> FPGA does all signal processing, all control, and is the I²S
+> clock master). Onboard push buttons (BTN0–BTN3) drive inline
+> mode and volume FSMs in `top.sv`. There is no ESP32, no SPI
+> host interface, no BLE, no NVS, no firmware at runtime.
+>
+> **For the current architecture, see**
+> [`docs/fpga_only_architecture.md`](fpga_only_architecture.md).
+> **For a narrative of what changed, see**
+> [`docs/migration_summary.md`](migration_summary.md).
+>
+> This document is retained verbatim for the historical record
+> (it describes the pre-migration phasing). Do not implement
+> anything described in the Phase 0–5 plan below.
+
 > **Project Auris** — 6-phase development plan from toolchain to demo.
-> **Last updated:** 2026-07
-> **Status:** Authoritative summary of the 6-phase plan. The full
+> **Last updated:** 2026-07 (banner added 2026-08-12)
+> **Status:** Authoritative summary of the pre-migration 6-phase plan. The full
 > source of truth (per-phase file map, build commands, go/no-go
-> checkpoints) is in [`docs/IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
+> checkpoints) is in [`docs/IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md)
+> — also banner-added.
 > Per-phase reflections live in [`docs/phase_reports/`](phase_reports/).
 
 This document is a one-page summary of *what we are building, in what
@@ -51,7 +75,7 @@ at the time of this writing:
 - ⬜ Vivado 2024.1+ installed and licence verified
 - ⬜ ESP-IDF v5.2+ installed and `idf.py build` works on
   hello-world
-- ⬜ FPGA bitstream generates and programs the Cmod S7-25
+- ⬜ FPGA bitstream generates and programs the Arty S7-25
 - ⬜ ESP32 firmware flashes and produces serial output
 
 The exit criteria for Phase 0 are: `make all` succeeds end-to-end,
@@ -75,7 +99,7 @@ phase's exit criteria must be true.
 **Tasks:**
 
 - [ ] Install Vivado 2024.1+ (WebPack / free edition; sufficient
-  for the XC7S25 device on the Cmod S7-25). Verify license.
+  for the XC7S25 device on the Arty S7-25). Verify license.
 - [ ] Install ESP-IDF v5.2+ with the ESP32 toolchain on `PATH`.
   Run `idf.py create-project` on a hello-world; confirm
   `idf.py build` produces a `.bin` file.
@@ -84,7 +108,7 @@ phase's exit criteria must be true.
 - [ ] Run `make tools`; confirm the Hann coefficients and default
   gain tables generate without errors.
 - [ ] Run `make fpga`; confirm a bitstream is produced under
-  `fpga/vivado_workspace/auris_cmod.runs/impl_1/top.bit`.
+  `fpga/vivado_proj/auris.runs/impl_1/top.bit`.
 - [ ] Run `make esp`; confirm the ESP32 firmware builds.
 - [ ] Program the FPGA with the bitstream; verify the LED blinks
   at 1 Hz (heartbeat in `status_mon.sv`).
@@ -120,7 +144,7 @@ not skip the checkpoint).
 
 - [ ] Order and receive: INMP441, PCM5102A, breadboard, jumper
   wires (per [`docs/hardware/BOM.md`](hardware/BOM.md)).
-- [ ] Wire the INMP441 and PCM5102A to the Cmod S7-25 Pmod JB
+- [ ] Wire the INMP441 and PCM5102A to the Arty S7-25 Pmod JA
   and Pmod JC (per [`docs/hardware/WIRING.md`](hardware/WIRING.md)).
 - [ ] Implement `i2s_rx.sv` and `i2s_tx.sv` in SystemVerilog.
 - [ ] Implement `cdc_i2s_to_dsp.sv` and `cdc_dsp_to_i2s.sv`
@@ -333,7 +357,7 @@ amplification for reliability).
 **Tasks:**
 
 - [ ] Design a custom PCB (KiCad, 2-layer, 50 mm × 70 mm) that
-  integrates the Cmod S7-25 (as a daughter board), the ESP32
+  integrates the Arty S7-25 (as a daughter board), the ESP32
   (as a daughter board), the INMP441, the PCM5102A, the
   buttons, the LEDs, the battery, and the 3.5 mm jacks.
 - [ ] Order the PCBs from JLCPCB or PCBWay (5 units, ~$20

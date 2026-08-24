@@ -84,7 +84,7 @@ copied verbatim, with any pre-phase adjustments noted.
 What was actually built. For each goal above, describe:
 
 - **What shipped.** Link to the commit, the bitstream, the
-  firmware, the test results.
+  test results.
 - **How it was verified.** What test was run, what
   measurement was taken, what the result was.
 - **Where it lives.** Link to the file, the directory, the

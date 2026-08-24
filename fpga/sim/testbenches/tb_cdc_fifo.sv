@@ -16,10 +16,6 @@
 //                3. Empty flag: read from empty FIFO, rd_empty_o asserts
 //                4. Continuous streaming: 100 samples round-trip
 //                5. Reset: assert reset, verify empty/full reset
-//
-//              NOTE: the current cdc_i2s_to_dsp RTL is a stub (all outputs
-//              tied to 0/1). This testbench validates the documented
-//              intended behavior; it will FAIL on the current stub.
 // =============================================================================
 `default_nettype none
 `timescale 1ns/1ps
@@ -110,29 +106,34 @@ module tb_cdc_fifo;
         data  = '0;
         cnt   = 0;
 
-        @(negedge rd_clk);
-        rd_en = 1'b1;
-        @(posedge rd_clk);
-
-        while (!rd_valid && cnt < timeout_cycles) begin
+        // Wait for the FIFO to become non-empty WITHOUT holding rd_en,
+        // so the read pointer cannot advance prematurely.
+        while (rd_empty && cnt < timeout_cycles) begin
             @(posedge rd_clk);
             cnt++;
         end
-
-        if (rd_valid) begin
-            data  = rd_data;
-            valid = 1'b1;
+        if (rd_empty) begin
+            valid = 1'b0;   // timeout: no data available
+            return;
         end
 
+        // Single-cycle read: capture rd_data at the NEGEDGE (pointer is
+        // stable; it only advances on posedges), then commit on the
+        // following posedge.
         @(negedge rd_clk);
-        rd_en = 1'b0;
+        rd_en  = 1'b1;
+        data   = rd_data;   // mem[rd_ptr] before the commit posedge
+        @(posedge rd_clk);  // read commits; pointer advances here
+        @(negedge rd_clk);
+        rd_en  = 1'b0;
+        valid  = 1'b1;
     endtask
 
     // -------------------------------------------------------------------------
     // VCD dump
     // -------------------------------------------------------------------------
     initial begin
-        $dumpfile("fpga/sim/waveforms/tb_cdc_fifo.vcd");
+        $dumpfile("tb_cdc_fifo.vcd");
         $dumpvars(0, tb_cdc_fifo);
     end
 
@@ -240,28 +241,34 @@ module tb_cdc_fifo;
         $display("\n=== Test 4: Continuous streaming (100 samples) ===");
         repeat (50) @(posedge rd_clk);
 
-        // Write and read concurrently. We write 1 sample per 32 BCLK cycles
-        // (= 1 sample at 48 kHz on a 3.072 MHz BCLK) and read 1 sample per
-        // 2000 DSP cycles (= 1 sample at 48 kHz on a 96 MHz DSP).
-        // For the test we simply issue all 100 writes, then all 100 reads.
-        for (int i = 0; i < 100; i++) begin
-            write_sample(24'h100000 + i[23:0]);
-        end
-        $display("       100 samples written");
-
-        // Read them back
-        for (int i = 0; i < 100; i++) begin
-            read_sample(rdata, rvalid, 500);
-            total_count++;
-            if (rvalid && rdata === (24'h100000 + i[23:0])) begin
-                if (i == 0 || i == 49 || i == 99)
-                    $display("[PASS] Test4-Read%0d: got %h", i, rdata);
-                pass_count++;
-            end else begin
-                $display("[FAIL] Test4-Read%0d: got %h valid=%b (exp %h)",
-                         i, rdata, rvalid, 24'h100000 + i[23:0]);
-                fail_count++;
+        // 25 synchronized batches of 4 (write 4, then read 4); keeps the
+        // depth-4 FIFO exactly full but never overflowing.
+        for (int b = 0; b < 25; b++) begin
+            // Write 4 samples (depth-4 FIFO: exactly fills, never overflows)
+            for (int j = 0; j < 4; j++) begin
+                int idx = b * 4 + j;
+                write_sample(24'h100000 + idx[23:0]);
             end
+            // Read 4 samples back
+            for (int j = 0; j < 4; j++) begin
+                int i = b * 4 + j;
+                read_sample(rdata, rvalid, 500);
+                total_count++;
+                if (rvalid && rdata === (24'h100000 + i[23:0])) begin
+                    if (i == 0 || i == 49 || i == 99)
+                        $display("[PASS] Test4-Read%0d: got %h", i, rdata);
+                    pass_count++;
+                end else begin
+                    $display("[FAIL] Test4-Read%0d: got %h valid=%b (exp %h)",
+                             i, rdata, rvalid, 24'h100000 + i[23:0]);
+                    fail_count++;
+                end
+            end
+
+            // CDC settle: let the read pointer synchronize back to the
+            // write domain before the next write batch, so the write-side
+            // full flag is accurate (avoids batch-boundary write drops).
+            repeat (20) @(posedge wr_clk);
         end
 
         // =====================================================================
@@ -280,6 +287,12 @@ module tb_cdc_fifo;
         repeat (10) @(posedge wr_clk);
         repeat (10) @(posedge rd_clk);
 
+        // Release reset, then wait for pointer-sync latency to settle
+        wr_rst_n = 1'b1;
+        rd_rst_n = 1'b1;
+        repeat (10) @(posedge wr_clk);
+        repeat (10) @(posedge rd_clk);
+
         total_count++;
         if (wr_full === 1'b0 && rd_empty === 1'b1) begin
             $display("[PASS] Test5-Reset: wr_full=%b rd_empty=%b", wr_full, rd_empty);
@@ -289,11 +302,6 @@ module tb_cdc_fifo;
                      wr_full, rd_empty);
             fail_count++;
         end
-
-        // Release reset
-        wr_rst_n = 1'b1;
-        rd_rst_n = 1'b1;
-        repeat (10) @(posedge rd_clk);
 
         // =====================================================================
         // Summary

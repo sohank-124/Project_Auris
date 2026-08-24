@@ -101,6 +101,40 @@ module spectral_proc import auris_pkg::*; #(
     // -------------------------------------------------------------------------
     // Bin counter (tracks FFT bin index, 0..127)
     // -------------------------------------------------------------------------
+    // Hermitian bin wrapping: The 256-point FFT (natural-order output)
+    // produces bins sequentially:
+    //   bin 0:            DC component (real)
+    //   bins 1..127:      positive frequencies
+    //   bin 128:          Nyquist frequency (real, self-conjugate)
+    //   bins 129..255:    negative frequencies
+    //
+    // For a real input, the FFT obeys X[256-k] = conj(X[k]) for k=1..127.
+    // This module processes all 256 bins with a 7-bit counter (0..127):
+    //
+    //   FFT bin k          Counter    Gain applied
+    //   ------------------------------------------
+    //   0..127              k          gain[k]
+    //   128                 0          gain[0]         (wraps to 0)
+    //   129..255            k-128      gain[k-128]     (wraps into 0..127)
+    //
+    // Equivalently, bin (256-k) for k=1..127 maps to gain[128-k]:
+    //   Y[256-k] = gain[128-k] * X[256-k]
+    //            = gain[128-k] * conj(X[k])      [FFT symmetry]
+    //
+    // For the IFFT to produce real output, Y must also be Hermitian:
+    //   Y[256-k] = conj(Y[k])
+    //            = conj(gain[k] * X[k])
+    //            = gain[k] * conj(X[k])           [gains are real Q2.14]
+    //
+    // Equating the two expressions:
+    //   gain[128-k] = gain[k]    for k = 1..127
+    //
+    // This is a palindromic constraint on gain[1..127]; gain[0] is
+    // unconstrained but applies to both DC (bin 0) and Nyquist (bin 128).
+    //
+    // MVP uses unity gain (trivially satisfies this). Phase 4 per-mode
+    // tables must enforce this symmetry or add a hardware mirror stage
+    // for bins 129..255.
     logic [ADDR_W-1:0] bin_idx;
     always_ff @(posedge clk_i or negedge rst_n_i) begin
         if (!rst_n_i)        bin_idx <= '0;

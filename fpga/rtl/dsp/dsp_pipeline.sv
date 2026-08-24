@@ -51,6 +51,7 @@ module dsp_pipeline import auris_pkg::*; #(
     input  wire [23:0]             noise_floor_i,
     input  wire [23:0]             gate_ratio_i,
     input  wire                    dsp_enable_i,
+    input  wire [4:0]              volume_i,      // 0=mute, 31=unity
 
     // Gain-table write interface (passed through to spectral_proc)
     input  wire [6:0]              gain_addr_i,
@@ -137,6 +138,10 @@ module dsp_pipeline import auris_pkg::*; #(
     logic [23:0]  ola_l, ola_r;
     logic         ola_v;
     logic         ola_frame_done;
+
+    // Internal nets — overlap_add -> volume_ctrl
+    logic [23:0] vol_l, vol_r;
+    logic        vol_v;
 
     // -------------------------------------------------------------------------
     // Internal nets — output_buffer -> output mux
@@ -229,7 +234,7 @@ module dsp_pipeline import auris_pkg::*; #(
             fft_tlast      <= 1'b0;
         end else begin
             if (win_v) begin
-                if (fft_sample_cnt == 8'd255) begin
+                if (fft_sample_cnt == FFT_LEN - 1) begin
                     fft_sample_cnt <= 8'd0;
                     fft_tlast      <= 1'b1;
                 end else begin
@@ -318,7 +323,7 @@ module dsp_pipeline import auris_pkg::*; #(
             ifft_tlast      <= 1'b0;
         end else begin
             if (sp_v) begin
-                if (ifft_sample_cnt == 8'd255) begin
+                if (ifft_sample_cnt == FFT_LEN - 1) begin
                     ifft_sample_cnt <= 8'd0;
                     ifft_tlast      <= 1'b1;
                 end else begin
@@ -375,6 +380,23 @@ module dsp_pipeline import auris_pkg::*; #(
     );
 
     // -------------------------------------------------------------------------
+    // Sub-module: volume_ctrl (after DSP, before output buffer)
+    // -------------------------------------------------------------------------
+    volume_ctrl #(
+        .DATA_W (I2S_DATA_W)
+    ) u_volume_ctrl (
+        .clk_i      (clk_i),
+        .rst_n_i    (rst_n_i),
+        .in_l_i     (ola_l),
+        .in_r_i     (ola_r),
+        .in_valid_i (ola_v),
+        .volume_i   (volume_i),
+        .out_l_o    (vol_l),
+        .out_r_o    (vol_r),
+        .out_valid_o(vol_v)
+    );
+
+    // -------------------------------------------------------------------------
     // Sub-module: output_buffer
     // -------------------------------------------------------------------------
     output_buffer #(
@@ -383,9 +405,9 @@ module dsp_pipeline import auris_pkg::*; #(
     ) u_output_buffer (
         .clk_i          (clk_i),
         .rst_n_i        (rst_n_i),
-        .in_l_i         (ola_l),
-        .in_r_i         (ola_r),
-        .in_v_i         (ola_v),
+        .in_l_i         (vol_l),
+        .in_r_i         (vol_r),
+        .in_v_i         (vol_v),
         .sample_clk_en_i(sample_valid_i),
         .out_l_o        (obuf_l),
         .out_r_o        (obuf_r),

@@ -20,7 +20,6 @@ and will be sent back for more information.
 <!-- Tick all that apply. -->
 
 - [ ] FPGA (`fpga/`)
-- [ ] Firmware (`firmware/`)
 - [ ] Tools (`tools/`)
 - [ ] Hardware / schematics (`hardware/`)
 - [ ] Documentation (`docs/`)
@@ -48,10 +47,9 @@ and will be sent back for more information.
 |---------------------|--------------------------------------|
 | OS                  | e.g. Ubuntu 24.04, Windows 11, macOS 14 |
 | Vivado version      | e.g. 2024.1 (or "N/A")               |
-| ESP-IDF version     | e.g. v5.2.2                          |
 | Python version      | e.g. 3.11.9                          |
-| Hardware revision   | e.g. Cmod S7-25 rev. B, ESP32 DevKit v1 |
-| Toolchain extras    | e.g. Verilator 5.020, cpplint 1.3.0  |
+| Hardware revision   | e.g. Arty S7-25 Rev. E              |
+| Toolchain extras    | e.g. Verilator 5.020, ruff 0.5.0     |
 
 ## Logs / Screenshots
 

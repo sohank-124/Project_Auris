@@ -6,7 +6,7 @@
 #
 #              The DSP pipeline runs at 96 MHz and processes 256-point
 #              FFT frames every 128 new samples (i.e. ~2.67 ms per
-#              frame at 48 kHz). 10 ms of simulated time is long enough
+#              frame at 48 kHz). 8 ms of simulated time is long enough
 #              to capture multiple full FFT->IFFT cycles and observe
 #              the overlap-add behavior end-to-end.
 #
@@ -25,10 +25,10 @@ set script_dir [file normalize [file dirname [info script]]]
 set rtl_dir    [file normalize "${script_dir}/../rtl"]
 set sim_dir    [file normalize "${script_dir}/../sim"]
 set sim_tb_dir [file join $sim_dir testbenches]
-set work_dir   [file normalize "${script_dir}/../vivado_workspace/sim_dsp_pipeline"]
+set work_dir   [file normalize "${script_dir}/../vivado_proj/sim_dsp_pipeline"]
 
 set proj_name  "sim_dsp_pipeline"
-set part       "XC7S25-1CSGA225C"
+set part       "xc7s25csga324-1"
 
 puts "============================================================"
 puts "  Sim: $proj_name"
@@ -49,11 +49,10 @@ set_property simulator_language Mixed   [current_project]
 
 # ---------------------------------------------------------------------------
 # 2. Add sources
-#    2a. Full RTL tree.
-#    2b. The DSP pipeline testbench (must exist before this script runs;
-#        see fpga/sim/testbenches/tb_dsp_pipeline.sv).
+#    2a. Full RTL tree — Vivado's add_files recurses natively
+#        when given a directory path.
 # ---------------------------------------------------------------------------
-add_files -fileset sources_1 [glob -directory $rtl_dir **/*.sv]
+add_files -fileset sources_1 $rtl_dir
 
 set tb_path [file join $sim_tb_dir tb_dsp_pipeline.sv]
 if {![file exists $tb_path]} {
@@ -65,7 +64,51 @@ if {![file exists $tb_path]} {
 add_files -fileset sim_1 $tb_path
 
 # ---------------------------------------------------------------------------
-# 3. Top
+# 3. Generate FFT/IFFT IP cores needed by dsp_pipeline
+# ---------------------------------------------------------------------------
+set ip_dir [file normalize "${script_dir}/../ip"]
+file mkdir $ip_dir
+
+set xfft_cfg [list \
+    CONFIG.transform_length             {256} \
+    CONFIG.target_clock_frequency       {96} \
+    CONFIG.input_width                  {16} \
+    CONFIG.phase_factor_width           {16} \
+    CONFIG.data_format                  {fixed_point} \
+    CONFIG.scaling_options              {block_floating_point} \
+    CONFIG.rounding_modes               {convergent_rounding} \
+    CONFIG.implementation_options       {pipelined_streaming_io} \
+    CONFIG.output_ordering              {natural_order} \
+    CONFIG.throttle_scheme              {realtime} \
+    CONFIG.aresetn                      {true} \
+    CONFIG.memory_options_data          {block_ram} \
+    CONFIG.memory_options_phase_factors {block_ram} \
+    CONFIG.memory_options_hybrid        {false} \
+]
+
+if {[llength [get_ips fft_256_core]] > 0} { remove_ip [get_ips fft_256_core] }
+# Wipe the previous output dir so Vivado does not create fft_256_core_N.
+# The -dir target must exist (create_ip does not create it).
+file delete -force [file join $ip_dir fft_256_core]
+file mkdir [file join $ip_dir fft_256_core]
+create_ip -name xfft -vendor xilinx.com -library ip -version 9.1 \
+    -module_name fft_256_core \
+    -dir [file join $ip_dir fft_256_core]
+set_property -dict $xfft_cfg [get_ips fft_256_core]
+generate_target simulation [get_ips fft_256_core]
+
+if {[llength [get_ips ifft_256_core]] > 0} { remove_ip [get_ips ifft_256_core] }
+# Wipe the previous output dir so Vivado does not create ifft_256_core_N.
+file delete -force [file join $ip_dir ifft_256_core]
+file mkdir [file join $ip_dir ifft_256_core]
+create_ip -name xfft -vendor xilinx.com -library ip -version 9.1 \
+    -module_name ifft_256_core \
+    -dir [file join $ip_dir ifft_256_core]
+set_property -dict $xfft_cfg [get_ips ifft_256_core]
+generate_target simulation [get_ips ifft_256_core]
+
+# ---------------------------------------------------------------------------
+# 4. Top
 # ---------------------------------------------------------------------------
 set_property top tb_dsp_pipeline [get_filesets sim_1]
 
@@ -73,18 +116,17 @@ update_compile_order -fileset sources_1
 update_compile_order -fileset sim_1
 
 # ---------------------------------------------------------------------------
-# 4. Launch and run
+# 5. Launch and run
 # ---------------------------------------------------------------------------
 puts "Launching xsim ..."
-launch_simulation -simulator xsim
+launch_simulation
 
-# 10 ms of simulated time = 960,000 cycles at 96 MHz = ~3-4 full FFT
-# frames at 48 kHz. Adjust if the testbench needs more or less.
-puts "Running 10 ms ..."
-run 10 ms
+# 8 ms of simulated time = enough for pipeline fill + output drain
+puts "Running 8 ms ..."
+run 8 ms
 
 # ---------------------------------------------------------------------------
-# 5. Tear down
+# 6. Tear down
 # ---------------------------------------------------------------------------
 close_sim -force
 close_project

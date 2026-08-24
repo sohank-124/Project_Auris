@@ -1,17 +1,44 @@
 # ESP32 Firmware Architecture
 
-> **Project Auris** — ESP32-DevKitC-32E firmware running ESP-IDF + FreeRTOS
-> **Last updated:** 2026-07
-> **Status:** Authoritative for the architectural intent. The
-> implementation lives in `firmware/main/main.c` (top-level + 8 tasks)
-> and the 11 components under `firmware/components/`.
+> **⚠️ HISTORICAL — 2026-08-12 FPGA-only migration.** This
+> document was authored for the pre-migration ESP32 + FPGA
+> architecture. The ESP32-DevKitC-32E, the ESP-IDF firmware
+> tree (`firmware/`), the FreeRTOS task scheduler, the BLE
+> GATT server, the NVS profile store, and the SPI control
+> plane have all been **removed from the build**.
+>
+> **The current architecture is FPGA-only.** Onboard push
+> buttons drive inline mode and volume FSMs in `top.sv`. There
+> is no ESP32, no firmware at runtime, no SPI host interface,
+> no BLE, no NVS.
+>
+> **For the current architecture, see**
+> [`docs/fpga_only_architecture.md`](fpga_only_architecture.md).
+> **For a narrative of what changed, see**
+> [`docs/migration_summary.md`](migration_summary.md).
+>
+> The body of this document is retained verbatim for the
+> historical record (it describes the pre-migration ESP32
+> firmware architecture). It is **not** part of the current
+> build. The `firmware/` directory is retained on disk per
+> the migration brief (identical to `archive/firmware/`) but
+> is not compiled or flashed.
 
-The ESP32 is the user-facing half of Project Auris. It owns the
-physical user interface (buttons, LED, battery), the Bluetooth
-radio, the NVS flash profile store, and the I2S master clock
-generator. It configures the FPGA by writing to the register file
-over SPI; the FPGA in turn reports its status (peak levels, frame
-counter, error flags) back over the same SPI link.
+> **Project Auris** — ESP32-DevKitC-32E firmware running ESP-IDF + FreeRTOS
+> **Last updated:** 2026-07 (banner added 2026-08-12)
+> **Status:** HISTORICAL — superseded by FPGA-only architecture on 2026-08-12.
+> The implementation described below lived in `firmware/main/main.c`
+> (top-level + 8 tasks) and the 11 components under
+> `firmware/components/`. None of these modules are in the
+> current build.
+
+The ESP32 was the user-facing half of Project Auris (pre-
+migration). It owned the physical user interface (buttons, LED,
+battery), the Bluetooth radio, the NVS flash profile store, and
+the I2S master clock generator. It configured the FPGA by
+writing to the register file over SPI; the FPGA in turn reported
+its status (peak levels, frame counter, error flags) back over
+the same SPI link.
 
 This document is the architectural companion to the firmware
 source. It describes the eleven components, the eight FreeRTOS

@@ -76,7 +76,7 @@ module input_buffer import auris_pkg::*; #(
     // final read_cnt=255 cycle does NOT trigger a spurious extra read.
     always_comb begin
         rd_en = 1'b0;
-        if (reading && (read_cnt < 8'd255)) begin
+        if (reading && (read_cnt < DEPTH - 1)) begin
             rd_en = 1'b1;
         end
     end
@@ -125,7 +125,7 @@ module input_buffer import auris_pkg::*; #(
                 hop_cnt     <= hop_cnt + 1'b1;
 
                 // End-of-hop: trigger a read burst
-                if (hop_cnt == 7'd127) begin
+                if (hop_cnt == DEPTH / 2 - 1) begin
                     frame_ready_o <= 1'b1;
                     reading       <= 1'b1;
                     // The oldest sample is at (wr_ptr + 1) — the next
@@ -144,7 +144,7 @@ module input_buffer import auris_pkg::*; #(
                 busy_o   <= 1'b1;
                 rd_ptr   <= rd_ptr + 1'b1;
                 read_cnt <= read_cnt + 1'b1;
-                if (read_cnt == 8'd255) begin
+                if (read_cnt == DEPTH - 1) begin
                     reading <= 1'b0;
                     busy_o  <= 1'b0;
                 end

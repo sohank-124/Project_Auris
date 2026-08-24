@@ -17,9 +17,6 @@
 //
 //              The testbench acts as the PCM5102A receiver, sampling sdata_o
 //              on BCLK rising edges and reconstructing the 24-bit values.
-//
-//              NOTE: the current i2s_tx RTL is a stub (sdata_o=0). This
-//              testbench validates the documented intended behavior.
 // =============================================================================
 `default_nettype none
 `timescale 1ns/1ps
@@ -66,7 +63,7 @@ module tb_i2s_tx;
     // LRCLK generation: 48 kHz, toggles every 32 BCLK cycles
     // -------------------------------------------------------------------------
     initial begin
-        lrclk = 1'b0;
+        lrclk = 1'b1;
         // Toggle LRCLK on BCLK falling edge 32 BCLKs after the previous toggle
         forever begin
             repeat (32) @(negedge bclk);
@@ -91,47 +88,30 @@ module tb_i2s_tx;
         output logic [23:0] left_data,
         output logic [23:0] right_data
     );
-        logic prev_lrclk;
-        logic bit_val;
-
         // ---- Wait for LRCLK falling edge (start of left) -------------------
-        prev_lrclk = lrclk;
-        while (prev_lrclk == 1'b0 || lrclk == 1'b1) begin
-            @(negedge bclk);
-            prev_lrclk = lrclk;
-        end
+        // Wait until LRCLK is low (start of left channel). At task entry
+        // LRCLK is high (see clock init), so this exits on the first fall.
+        while (lrclk !== 1'b1) @(negedge bclk);  // ensure right phase first
+        while (lrclk !== 1'b0) @(negedge bclk);  // then wait for left fall
         // We just observed LRCLK falling. Now wait for the BCLK rising edge
         // where the MSB will be driven (standard I2S: 1-BCLK delay).
 
-        // The 1-BCLK delay bit is sampled and discarded.
-        @(posedge bclk);
-        // Now LRCLK should be low. Skip 1 BCLK rising edge to absorb the delay.
-        // (The transmitter drives the MSB on the falling edge AFTER the first
-        //  BCLK rising edge following the LRCLK transition.)
-        // The next 24 BCLK rising edges carry the left data MSB-first.
+        // Account for 2-FF synchronizer + edge detect latency in the DUT
+        repeat (3) @(posedge bclk);
+        // The 1-BCLK delay bit has now passed; the next 24 BCLK rising edges
+        // carry the left data MSB-first.
 
         for (int i = 23; i >= 0; i--) begin
             @(posedge bclk);
             left_data[i] = sdata_o;
         end
 
-        // Skip 8 don't-care bits
-        repeat (8) @(posedge bclk);
-
-        // ---- Wait for LRCLK rising edge (start of right) ------------------
-        prev_lrclk = lrclk;
-        while (prev_lrclk == 1'b1 || lrclk == 1'b0) begin
-            @(negedge bclk);
-            prev_lrclk = lrclk;
-        end
-
-        @(posedge bclk);  // Skip 1-BCLK delay bit
         for (int i = 23; i >= 0; i--) begin
             @(posedge bclk);
             right_data[i] = sdata_o;
         end
 
-        repeat (8) @(posedge bclk);
+        repeat (7) @(posedge bclk);
     endtask
 
     // -------------------------------------------------------------------------
@@ -144,13 +124,15 @@ module tb_i2s_tx;
         input logic [23:0] left_data,
         input logic [23:0] right_data
     );
-        // Hold valid high across an LRCLK transition so the transmitter
-        // can latch the new sample.
-        @(negedge bclk);
         left_in  = left_data;
         right_in = right_data;
+        // Deterministic frame sync: wait for a full RISE then the next FALL
+        // regardless of entry phase, guaranteeing we start at a left-frame
+        // boundary. Hold valid across that boundary + the next one.
+        while (lrclk !== 1'b1) @(negedge bclk);  // right phase
+        while (lrclk !== 1'b0) @(negedge bclk);  // left start (fall)
         valid_in = 1'b1;
-        repeat (33) @(negedge bclk);
+        repeat (130) @(negedge bclk);
         valid_in = 1'b0;
     endtask
 
@@ -181,7 +163,7 @@ module tb_i2s_tx;
     // VCD dump
     // -------------------------------------------------------------------------
     initial begin
-        $dumpfile("fpga/sim/waveforms/tb_i2s_tx.vcd");
+        $dumpfile("tb_i2s_tx.vcd");
         $dumpvars(0, tb_i2s_tx);
     end
 
@@ -202,8 +184,10 @@ module tb_i2s_tx;
         // Test 1: Basic stereo frame
         // =====================================================================
         $display("\n=== Test 1: Basic stereo frame (L=0x123456, R=0x789ABC) ===");
-        provide_sample(24'h123456, 24'h789ABC);
-        check_serial(24'h123456, 24'h789ABC, "Test1-BasicFrame");
+        fork
+            provide_sample(24'h123456, 24'h789ABC);
+            check_serial(24'h123456, 24'h789ABC, "Test1-BasicFrame");
+        join
 
         // =====================================================================
         // Test 2: Underflow condition
@@ -243,11 +227,13 @@ module tb_i2s_tx;
         // =====================================================================
         $display("\n=== Test 3: 10 consecutive frames (incrementing pattern) ===");
         for (int i = 0; i < 10; i++) begin
-            provide_sample(24'h300000 + i[23:0],
-                           24'h400000 + i[23:0]);
-            check_serial(24'h300000 + i[23:0],
-                         24'h400000 + i[23:0],
-                         $sformatf("Test3-Frame%0d", i));
+            fork
+                provide_sample(24'h300000 + i[23:0],
+                               24'h400000 + i[23:0]);
+                check_serial(24'h300000 + i[23:0],
+                             24'h400000 + i[23:0],
+                             $sformatf("Test3-Frame%0d", i));
+            join
         end
 
         // =====================================================================

@@ -128,8 +128,8 @@ Use a category prefix followed by a short kebab-cased description:
 | `hw/`         | Hardware design (schematics, BOM, mechanical)                          |
 | `exp/`        | Throwaway experiments; clearly marked as such in the PR description    |
 
-Examples: `feature/fft-overlap-add`, `fix/spi-mode0-polarity`,
-`docs/architecture-clock-domains`, `chore/bump-esp-idf-5.2`.
+Examples: `feature/fft-overlap-add`, `fix/btn-debounce-glitch`,
+`docs/architecture-clock-domains`, `chore/update-vivado-2024.2`.
 
 ### Keeping branches current
 
@@ -154,7 +154,6 @@ linter for every PR; please run it locally before pushing.
 | Language        | Style / tool                              | Config file                              |
 |-----------------|-------------------------------------------|------------------------------------------|
 | SystemVerilog   | [Verible](https://github.com/chipsalliance/verible) `verible-verilog-lint` and `verible-verilog-format` | `.verible.rules` in `fpga/`              |
-| C (firmware)    | `clang-format` (LLVM style, 4-space indent) + `cpplint` | `.clang-format` in `firmware/`           |
 | Python          | `ruff` (lint + format) targeting PEP 8     | `pyproject.toml` in `tools/`             |
 | Markdown        | `markdownlint` with the default rules     | `.markdownlint.json` at the repo root    |
 | Tcl (Vivado)    | `tclfmt` if available, otherwise 4-space indent and 100-column wrap | manual                                   |
@@ -178,20 +177,23 @@ linter for every PR; please run it locally before pushing.
 Every PR must leave the tree in a known-good state. At minimum:
 
 - **FPGA** — if you touch anything under `fpga/`, run the relevant
-  testbenches with `make fpga-sim` and confirm they pass. New RTL blocks
-  must ship with at least one focused testbench under
+  testbenches with `make fpga-sim` and confirm they pass. New RTL
+  blocks must ship with at least one focused testbench under
   `fpga/sim/testbenches/`.
-- **Firmware** — if you touch anything under `firmware/`, run `make esp`
-  and confirm the binary builds cleanly with no new warnings. New
-  components should add a unit or integration test under
-  `firmware/components/<name>/test/`.
-- **Tools** — if you touch anything under `tools/`, run the affected
-  scripts on the bundled defaults and check the generated `.hex` / `.coe`
-  artefacts into `fpga/generated/`.
-- **Docs** — if you touch anything under `docs/` or any top-level
-  markdown, run `markdownlint` and resolve all warnings.
-- **CI** — all workflows defined in `.github/workflows/` must pass on
-  your PR before it can be merged.
+- **Tools** — if you touch anything under `tools/`, run the
+  affected scripts on the bundled defaults and check the
+  generated `.hex` / `.coe` artefacts into `fpga/generated/`.
+- **Docs** — if you touch anything under `docs/` or any
+  top-level markdown, run `markdownlint` and resolve all
+  warnings.
+- **CI** — all workflows defined in `.github/workflows/` must
+  pass on your PR before it can be merged.
+
+> **No firmware.** The FPGA-only build has no firmware at
+> runtime. There is no `firmware/` step in the build. The
+> `firmware/` directory is retained on disk per the 2026-08-12
+> migration brief (identical to `archive/firmware/`); it is not
+> compiled or flashed and is not part of the build.
 
 Coverage targets are informal at this stage, but a testbench that only
 exercises the reset path is not acceptable for new code.
@@ -231,8 +233,8 @@ exercises the reset path is not acceptable for new code.
 
 - We **squash-merge** by default. The squashed commit message should
   follow [Conventional Commits](https://www.conventionalcommits.org/):
-  `feat: add Hearing mode to mode_manager` or
-  `fix(firmware): debounce button_handler double-fire`.
+  `feat: add Music mode gain table to mode_ctrl` or
+  `fix(rtl): btn_debounce double-fire`.
 - Releases are tagged by a maintainer from `main` after a meaningful
   batch of PRs has landed. The version follows
   [Semantic Versioning](https://semver.org/).
@@ -317,22 +319,29 @@ reference GitHub Actions by their canonical names (e.g.
 
 ## Area Ownership
 
-The `CODEOWNERS` file at the root of this repository is the source of
-truth for review routing. Pull requests touching the listed paths will
-automatically request a review from the listed owners.
+The `CODEOWNERS` file at the root of this repository is the
+source of truth for review routing. Pull requests touching the
+listed paths will automatically request a review from the listed
+owners.
 
 | Path                  | Owns                                                  |
 |-----------------------|-------------------------------------------------------|
 | `/fpga/`              | SystemVerilog RTL, constraints, testbenches, scripts  |
-| `/firmware/`          | ESP-IDF C firmware and components                     |
-| `/tools/`             | Python code generators and bitstream utilities        |
+| `/tools/`             | Python code generators and validation tools            |
 | `/hardware/`          | Schematics, BOM, mechanical notes                     |
 | `/docs/`              | Architecture, hardware, phase reports, college app    |
+| `/archive/`           | Historical ESP32 + FPGA source (read-only, preserved) |
 | `/.github/workflows/` | CI workflows and GitHub Actions configuration        |
 
+The `/firmware/` directory is the historical ESP32 firmware
+tree. It is retained on disk per the 2026-08-12 migration brief
+and is identical in content to `/archive/firmware/`. It is **not**
+part of the build; changes to it require explicit coordination
+with the archive canonical copy and are unlikely to be merged.
+
 At the time of writing, all paths default to the project owner
-(`@<OWNER>`). As additional maintainers join, add them to the relevant
-section of `CODEOWNERS` rather than to the default.
+(`@<OWNER>`). As additional maintainers join, add them to the
+relevant section of `CODEOWNERS` rather than to the default.
 
 ---
 
@@ -341,13 +350,13 @@ section of `CODEOWNERS` rather than to the default.
 Bug reports and feature requests are tracked as GitHub issues. Please use
 the issue templates:
 
-- **Bug report** — for FPGA, firmware, tool, or build issues
-- **Feature request** — for new listening modes, new peripherals, or new
-  tools
+- **Bug report** — for FPGA, tool, build, or hardware issues
+- **Feature request** — for new listening modes, new
+  peripherals, or new tools
 - **Documentation** — for typos, missing information, or unclear passages
   in any `*.md` under `docs/` or the repo root
-- **Hardware** — for wiring mistakes, BOM corrections, or mechanical
-  issues
+- **Hardware** — for wiring mistakes, BOM corrections, or
+  mechanical issues
 
 A good issue includes: a one-line summary, steps to reproduce (for bugs),
 the expected vs. actual behaviour, your toolchain versions, and any

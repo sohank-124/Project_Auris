@@ -6,6 +6,10 @@ easier to review than a sprawling one.
 If your PR closes an existing issue, link it with "Closes #N". If it
 fixes a security issue, see SECURITY.md (if present) and do NOT file a
 public issue first.
+
+Note: Project Auris is an FPGA-only build. There is no ESP32, no
+firmware at runtime, no SPI host interface. "Build" in this template
+means Vivado synthesis + implementation + xsim simulation.
 -->
 
 ## Description
@@ -23,7 +27,6 @@ Closes #
 <!-- Tick all that apply. -->
 
 - [ ] FPGA (`fpga/`)
-- [ ] Firmware (`firmware/`)
 - [ ] Tools (`tools/`)
 - [ ] Hardware (`hardware/`)
 - [ ] Documentation (`docs/`)
@@ -43,26 +46,36 @@ Closes #
 ## Testing Checklist
 
 <!--
-Tick the boxes that apply. CI runs the first five; the hardware-test row
-is for changes that need bench validation. Add a new test whenever you
-add a feature or fix a bug.
+Tick the boxes that apply. CI runs the lint and sim gates; the
+hardware-test row is for changes that need bench validation. Add a
+new test whenever you add a feature or fix a bug.
 -->
 
 - [ ] `verible-verilog-lint` passes on `fpga/rtl/**/*.sv`
-- [ ] `make fpga-sim` passes (or `verilator --binary ...` for the affected TB)
-- [ ] `idf.py build` passes for ESP32 target
+- [ ] `make fpga-sim` passes (or the relevant `fpga/scripts/sim_*.tcl` for the affected TB)
 - [ ] Affected Python tools (`tools/`) run cleanly and produce expected outputs
 - [ ] `markdownlint` passes on touched `.md` files
-- [ ] Manual hardware test on Cmod S7-25 + ESP32 DevKit v1
+- [ ] Manual hardware test on Arty S7-25 (programming the bitstream and verifying STATUS0 heartbeat, mode cycling, audio playback)
 - [ ] New test added (and linked below)
 
-**Test details:** _e.g. "Added `tb_i2s_rx_new_apb_test`; runs in 1.2 ms."_
+**Test details:** _e.g. "Added `tb_btn_debounce_edge_test`; runs in 1.2 ms."_
+
+## Timing Closure
+
+<!--
+For changes to any DSP / CDC / I2S / reset path on the FPGA, fill in
+the post-route timing summary. Skip for non-timing-critical changes.
+-->
+
+- [ ] Post-route WNS (worst negative slack) ≥ 0.0 ns at the 96 MHz target
+- [ ] Post-route WHNS (worst hold slack) ≥ 0.0 ns
+- [ ] No new CDC paths introduced (or: new CDC paths documented and reviewed)
 
 ## Screenshots / Waveforms
 
 <!--
 For RTL changes, attach a GTKWave / Vivado waveform capture of the
-relevant signals (BCLK, LRCLK, DMA strobe, FFT output, etc.).
+relevant signals (BCLK, LRCLK, FFT output, gain-table load, etc.).
 For UI / docs changes, attach a screenshot.
 For everything else, write "N/A".
 -->
@@ -70,7 +83,7 @@ For everything else, write "N/A".
 ## Final Checklist
 
 - [ ] I have read [CONTRIBUTING.md](../CONTRIBUTING.md)
-- [ ] My code follows the project's style (Verible, ruff, cpplint, markdownlint all clean)
+- [ ] My code follows the project's style (Verible, ruff, markdownlint all clean)
 - [ ] I have updated the relevant documentation
 - [ ] I have added an entry to [CHANGELOG.md](../CHANGELOG.md) under "Unreleased"
 - [ ] My PR is focused on a single concern (no unrelated drive-by edits)

@@ -1,13 +1,16 @@
 # =============================================================================
 # File:        sim_all.tcl
 # Project:     Project Auris
-# Description: Master simulation script. Sources each per-testbench sim
-#              script in sequence, captures pass/fail, and prints a
-#              summary table.
+# Description: Master simulation script. Auto-discovers every per-testbench
+#              sim_*.tcl in this directory, sources them in alphabetical
+#              order, captures pass/fail, and prints a summary table.
 #
 #              Each child script is fully self-contained (creates its
-#              own project in vivado_workspace/sim_*/). This script just
+#              own project in vivado_proj/sim_*/). This script just
 #              sequences them and aggregates results.
+#
+#              sim_all.tcl itself is excluded from the glob so it does
+#              not recurse into itself.
 #
 # Usage:
 #   vivado -mode batch -source fpga/scripts/sim_all.tcl
@@ -18,17 +21,37 @@
 # ---------------------------------------------------------------------------
 set script_dir [file normalize [file dirname [info script]]]
 
-# Order matters only for readability. The tests are independent.
-set sim_scripts [list \
-    [file join $script_dir sim_i2s_rx.tcl] \
-    [file join $script_dir sim_spi_slave.tcl] \
-    [file join $script_dir sim_dsp_pipeline.tcl] \
-]
+# ---------------------------------------------------------------------------
+# 0a. Auto-discover sim_*.tcl files in this directory.
+#     Tests are independent; alphabetical order is purely for readability
+#     and deterministic CI output. sim_all.tcl is excluded explicitly so
+#     the glob result does not include this script itself (which would
+#     cause infinite recursion on source).
+#
+#     Additional sim_*.tcl files can be excluded from the auto-discovery
+#     list by appending them to the `archived_scripts` list below. This is
+#     the canonical way to retire a per-testbench script after the DUT
+#     has been removed from the design. The SPI slave and reg_file sims
+#     were retired in the FPGA-only migration (2026-08) and physically
+#     moved to archive/scripts/, so nothing needs excluding today; the
+#     mechanism is kept for future retirements.
+# ---------------------------------------------------------------------------
+set archived_scripts [list]
+set sim_scripts [lsort [glob -nocomplain -directory $script_dir sim_*.tcl]]
+set sim_scripts [lsearch -all -inline -not -exact $sim_scripts \
+    [file join $script_dir sim_all.tcl]]
+foreach a $archived_scripts {
+    set sim_scripts [lsearch -all -inline -not -exact $sim_scripts $a]
+}
 
 puts "============================================================"
 puts "  Project Auris - master sim run"
 puts "  script_dir  = $script_dir"
 puts "  # of sims   = [llength $sim_scripts]"
+puts "  Discovered:"
+foreach s $sim_scripts {
+    puts "    - [file tail $s]"
+}
 puts "============================================================"
 
 # ---------------------------------------------------------------------------

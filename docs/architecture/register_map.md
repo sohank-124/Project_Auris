@@ -1,19 +1,56 @@
 # SPI Register Map
 
-> **Project Auris** — FPGA register file accessed by the ESP32 over SPI
-> **Last updated:** 2026-07
-> **Status:** Authoritative for the architectural register map. The
-> RTL-side localparam constants live in
-> [`fpga/rtl/pkg/auris_pkg.sv`](../../fpga/rtl/pkg/auris_pkg.sv); the
-> firmware-side `#define` constants live in
-> [`firmware/components/fpga_config/fpga_config.h`](../../firmware/components/fpga_config/fpga_config.h).
-> These three locations MUST be kept in lock-step.
+> **HISTORICAL REFERENCE — not part of the current architecture.**
+>
+> **Project Auris** — Original FPGA register file that was accessed
+> by the ESP32 over SPI (multi-MCU build).
+> **Last updated:** 2026-08-12 (FPGA-only migration: banner refreshed;
+> body retained verbatim for the historical record).
+> **Status:** Archived for historical reference only. The SPI slave,
+> the `reg_file.sv` module, the `cdc_spi_to_dsp.sv` / `cdc_dsp_to_spi.sv`
+> CDC modules, and the firmware `/firmware/` tree have all been
+> removed from the FPGA-only build. The register map below is
+> **no longer externally accessible** — there is no host processor
+> that can read or write these registers at runtime.
+>
+> In the FPGA-only architecture, every field previously written over
+> SPI is now controlled internally:
+> - Mode is driven by the 2-bit `current_mode` register
+>   in `top.sv`, which is updated by `BTN0` / `BTN1`. The
+>   current mode numbering is **0 = General, 1 = Speech, 2 = Music,
+>   3 = Hearing** (the historical numbering was 0 = General,
+>   1 = Hearing, 2 = Speech, 3 = Bypass — the new numbering
+>   adds Music and drops Bypass).
+> - Volume is driven by the 5-bit `volume_level` register
+>   in `top.sv`, which is updated by `BTN2` / `BTN3`. The
+>   mapping is linear in Q2.14: `vol_q14 = level * (16384/31) ≈
+>   level * 529`.
+> - The per-bin gain table is driven by the pre-computed
+>   per-mode tables inside `mode_ctrl.sv`. There is no runtime
+>   way for a user to change individual bins.
+> - Telemetry (peak levels, frame counter, error flags) is
+>   computed inside `dsp_pipeline.sv` but not exposed on any
+>   external interface; observability is via the STATUS0
+>   (heartbeat) and STATUS2 (sticky clip) LEDs.
+>
+> The `firmware/` tree (ESP-IDF, ESP32 firmware) is **retained on
+> disk** per the 2026-08-12 migration brief; it is identical in
+> content to `archive/firmware/`. It is **not** part of the
+> current build and is not compiled or flashed.
+>
+> For the current architecture, see
+> [`docs/fpga_only_architecture.md`](../fpga_only_architecture.md).
+> For the current mode/volume/gain-table architecture, see
+> [`modes_and_gains.md`](modes_and_gains.md). For the migration
+> narrative, see
+> [`docs/migration_summary.md`](../migration_summary.md).
 
-The ESP32 configures the FPGA through a 128-entry × 24-bit register
-file. Writes set the operating mode, master volume, per-bin gain
-table, and DSP control fields. Reads return telemetry (peak levels,
-frame counter, error flags). The register file is the *only* mechanism
-by which the ESP32 can change the FPGA's behaviour at runtime.
+The original architecture (now superseded) used a 128-entry × 24-bit
+register file accessible to the ESP32 over a SPI link. Writes set the
+operating mode, master volume, per-bin gain table, and DSP control
+fields. Reads return telemetry (peak levels, frame counter, error
+flags). The register file was the *only* mechanism by which the
+ESP32 could change the FPGA's behaviour at runtime.
 
 ---
 

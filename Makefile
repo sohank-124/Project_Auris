@@ -1,7 +1,13 @@
 # =============================================================================
-# Top-level Makefile orchestrating FPGA and ESP32 builds
+# Top-level Makefile orchestrating FPGA builds (FPGA-only migration)
+# -----------------------------------------------------------------------------
+# Migration date: 2026-08 (Phase 5 cleanup)
+#   * ESP32 / ESP-IDF targets removed (esp, esp-flash, esp-monitor)
+#   * sim_spi_slave removed from fpga-sim (SPI RTL is archived, not active)
+#   * Original SPI RTL files retained under fpga/rtl/ as dead modules for
+#     reference; archival copies live under archive/rtl/.
 # =============================================================================
-.PHONY: help fpga fpga-clean fpga-sim esp esp-flash esp-monitor all clean
+.PHONY: help fpga fpga-clean fpga-sim all clean
 
 # Default target
 help:
@@ -11,11 +17,8 @@ help:
 	@echo "  make fpga         Build FPGA bitstream (Vivado batch mode)"
 	@echo "  make fpga-clean   Wipe Vivado workspace"
 	@echo "  make fpga-sim     Run all FPGA testbenches in xsim"
-	@echo "  make esp          Build ESP32 firmware"
-	@echo "  make esp-flash    Flash ESP32 (set ESP_PORT env var)"
-	@echo "  make esp-monitor  Open serial monitor"
 	@echo "  make tools        Run code generators (Hann coeffs, gain tables)"
-	@echo "  make all          Build tools, FPGA, and ESP32"
+	@echo "  make all          Build tools and FPGA bitstream"
 	@echo "  make clean        Wipe all build outputs"
 
 # ----- Tools -----
@@ -31,24 +34,30 @@ fpga:
 	vivado -mode batch -source fpga/scripts/build_project.tcl
 
 fpga-clean:
-	rm -rf vivado_workspace/ fpga/*.runs/ fpga/*.cache/
+	rm -rf vivado_proj/ fpga/*.runs/ fpga/*.cache/
 
 fpga-sim:
 	vivado -mode batch -source fpga/scripts/sim_i2s_rx.tcl
-	vivado -mode batch -source fpga/scripts/sim_spi_slave.tcl
+	# sim_spi_slave.tcl removed in Phase 5 (FPGA-only migration, 2026-08).
+	# SPI RTL is archived under archive/rtl/ and not part of the active build.
 
-# ----- ESP32 -----
-esp:
-	cd firmware && idf.py build
-
-esp-flash:
-	cd firmware && idf.py -p $(ESP_PORT) flash
-
-esp-monitor:
-	cd firmware && idf.py -p $(ESP_PORT) monitor
+# ----- ESP32 (DISABLED — FPGA-only migration, Phase 5, 2026-08) -----
+# The ESP32 is no longer part of the hardware. The FPGA handles all
+# control, mode switching, and volume management via onboard pushbuttons.
+# Firmware sources are preserved under archive/firmware/ for reference.
+# These targets are intentionally retained as commented stubs so the
+# migration boundary is explicit and the firmware can be resurrected later.
+#
+# esp:
+# 	cd firmware && idf.py build
+#
+# esp-flash:
+# 	cd firmware && idf.py -p $(ESP_PORT) flash
+#
+# esp-monitor:
+# 	cd firmware && idf.py -p $(ESP_PORT) monitor
 
 # ----- Combined -----
-all: tools fpga esp
+all: tools fpga
 
 clean: fpga-clean
-	cd firmware && idf.py fullclean

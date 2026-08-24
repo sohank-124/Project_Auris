@@ -55,7 +55,7 @@ loop in the breadboard wiring.
   most useful artifact when reviewing the data later. Save the
   photo with the measurement CSV.
 - **Log the environmental conditions.** Temperature (CPU temp of
-  the Cmod S7-25 matters for ADC drift), humidity (less so), and
+  the Arty S7-25 matters for ADC drift), humidity (less so), and
   ambient noise (the SNR measurement is sensitive to acoustic
   noise) belong in the log header.
 - **Reject the outliers.** If a measurement is more than 3 σ from
@@ -81,7 +81,7 @@ items that are non-negotiable for the headline measurements.
 | Known audio test files (1 kHz sine, pink noise, speech sample, chirp) | Test signals | Yes | Generate with Python (`tools/test_vector_gen/gen_test_signals.py`) |
 | Calibrated measurement microphone (Dayton Audio EMM-6 or Behringer ECM8000) | Acoustic-frequency-response reference | Optional | Use the INMP441 as the reference (cheaper, less accurate) |
 | Stopwatch / phone timer | Latency sanity check (round-trip echo timing) | Yes | Oscilloscope + impulse (more accurate) |
-| Thermometer or thermal camera (0.1 °C resolution) | Optional: tracks the Cmod S7-25 die temperature during long tests | Optional | Skip; assumes room-temperature operation |
+| Thermometer or thermal camera (0.1 °C resolution) | Optional: tracks the Arty S7-25 die temperature during long tests | Optional | Skip; assumes room-temperature operation |
 
 ### 2.1 Pre-test setup checklist
 
@@ -90,9 +90,8 @@ items that are non-negotiable for the headline measurements.
 2. Run the Bypass sanity check (§3.1) before any other measurement.
 3. Verify the audio interface is set to 24-bit, 48 kHz, no +48 V
    phantom power (the test mics are not phantom-powered).
-4. Verify the laptop's Wi-Fi and Bluetooth radios are off (or at
-   least the ESP32's BLE stack is suspended) to avoid RF noise on
-   the audio measurement.
+4. Verify the laptop's Wi-Fi and Bluetooth radios are off to
+   avoid RF noise on the audio measurement.
 5. Photograph the setup.
 
 ---
@@ -134,10 +133,12 @@ measure the time delay between the two.
 
 ### 3.4 Procedure
 
-1. **Verify Bypass.** Set `REG_MODE = MODE_BYPASS` (long-press
-   the mode button) — or, equivalently, set `REG_CONTROL.bypass`
-   (bit 1) to 1. Confirm a hand-clap in front of the mic is audible
-   in the headphones with no obvious delay.
+1. **Verify Bypass.** Hold the FPGA's `dsp_enable_i` input low
+   (or use the bring-up bypass path inside `dsp_pipeline.sv`).
+   Confirm a hand-clap in front of the mic is audible in the
+   headphones with no obvious delay. In the production
+   bitstream, `dsp_enable_i` is tied to 1; bypass is exercised
+   at bring-up by editing the wire in the testbench build.
 2. **Connect probes.** Probe the INMP441's SDOUT line (the analog
    equivalent is the audio at the mic's input pin — easier: probe
    the speaker output feeding the mic). Probe the PCM5102A's
@@ -150,8 +151,8 @@ measure the time delay between the two.
    time difference between the input trigger and the output
    waveform's leading edge. Take 10 measurements, average, and
    record the standard deviation.
-6. **Repeat for General mode.** Set `REG_MODE = GENERAL` (and
-   clear `REG_CONTROL.bypass`). Re-measure; the latency should be
+6. **Repeat for General mode.** Press BTN0 until the RGB LED
+   is green (General mode). Re-measure; the latency should be
    identical to Bypass (the DSP is engaged but the gain table
    is flat).
 
@@ -236,11 +237,12 @@ configured gain table.
 | Excellent | Same, within ±1 dB, AND the Hearing / Speech modes match the gain table to within ±1 dB at every bin centre. |
 
 A failure in Bypass is almost always an analog issue (wiring,
-grounding, codec pipeline). A failure in Hearing / Speech is
-usually a gain-table loading problem (check the indirect SPI
-writes to `REG_GAIN_ADDR` / `REG_GAIN_DATA` and the
-`REG_GAIN_COMMIT` that activates the new bank; see
-[`docs/architecture/register_map.md`](architecture/register_map.md) §3).
+grounding, codec pipeline). A failure in Hearing / Speech /
+Music is usually a gain-table loading problem (the pre-computed
+per-mode tables ship inside `mode_ctrl.sv`; if a table is
+incorrect, fix it in the RTL and rebuild). For the historical
+SPI-based gain-table loading protocol (no longer in the build),
+see [`docs/architecture/register_map.md`](architecture/register_map.md) §3.
 
 ---
 
@@ -306,53 +308,53 @@ the output into the noise floor.
 
 ### 6.1 Method
 
-Measure the current draw on each power rail (ESP32 USB, Cmod S7-25
-USB) in each operating mode (Bypass, General, Hearing, Speech).
-The total power consumption is the sum of the two rails.
+Measure the current draw on the Arty S7-25's USB rail in each
+operating mode (General, Speech, Music, Hearing). The
+FPGA-only build has only one powered board (the Arty S7-25);
+there is no second rail to measure.
 
 ### 6.2 Equipment
 
-- USB inline current meter (one per rail; or a multimeter inline
-  with one of the USB cables)
+- USB inline current meter (or a multimeter inline with the
+  Arty S7-25's USB cable)
 - Multimeter (True-RMS, 0.1 mV resolution) for the voltage
   measurement on the 5 V rail (to compute the power)
 
 ### 6.3 Procedure
 
 1. **Bypass sanity check.** Same as §3.1.
-2. **Measure ESP32 rail.** Insert the inline current meter between
-   the laptop and the ESP32's micro-USB cable. Read the current
-   in Bypass mode. Record.
-3. **Measure FPGA rail.** Insert the inline current meter between
-   the laptop and the Cmod S7-25's USB cable. Read the current
-   in Bypass mode. Record.
-4. **Repeat for each mode.** Switch to General, Hearing, and
-   Speech modes; record the current on each rail in each mode.
-5. **Compute power.** P = V × I. With a 5 V rail, P_W = 5 ×
-   I_A. Total power is the sum of the two rails.
+2. **Measure FPGA rail.** Insert the inline current meter between
+   the laptop and the Arty S7-25's USB cable. Read the current
+   in General mode. Record.
+3. **Repeat for each mode.** Cycle through Speech, Music, and
+   Hearing modes; record the current on the rail in each mode.
+4. **Compute power.** P = V × I. With a 5 V rail, P_W = 5 ×
+   I_A.
 
 ### 6.4 Expected behaviour
 
-| Mode | ESP32 (mA) | FPGA (mA) | Total (mA) | Total (W) |
-|------|------------|-----------|------------|-----------|
-| Bypass | ~80 | ~120 | ~200 | ~1.00 |
-| General | ~80 | ~150 | ~230 | ~1.15 |
-| Hearing | ~80 | ~150 | ~230 | ~1.15 |
-| Speech | ~80 | ~150 | ~230 | ~1.15 |
+| Mode | Arty S7-25 (mA) | Total (W) |
+|------|-----------------|-----------|
+| General | ~150 | ~0.75 |
+| Speech  | ~150 | ~0.75 |
+| Music   | ~150 | ~0.75 |
+| Hearing | ~150 | ~0.75 |
 
-The FPGA current is higher in DSP-active modes because the FFT and
-IFFT are running. The Bypass current is lower because the DSP
-pipeline is in clock-gated reset.
+The FPGA current is roughly constant across modes because the
+DSP pipeline (FFT, IFFT, spectral proc, overlap-add, volume)
+runs identically in every mode — only the per-mode gain tables
+change, and those are stored in BRAM and contribute zero dynamic
+current.
 
 ### 6.5 Pass / fail criteria
 
 | Tier | Criterion |
 |------|-----------|
-| Acceptable | < 300 mA total. USB 2.0 ports are rated for 500 mA; 300 mA is a safe margin. |
-| Good | < 250 mA total. Leaves headroom for the BLE radio and the status LEDs. |
-| Excellent | < 200 mA total. Implies the FPGA is doing aggressive clock gating in idle modes. |
+| Acceptable | < 250 mA total. USB 2.0 ports are rated for 500 mA; 250 mA is a safe margin. |
+| Good | < 200 mA total. Leaves headroom for the status LEDs and any future peripheral. |
+| Excellent | < 150 mA total. Implies the FPGA is doing aggressive clock gating in idle paths. |
 
-A power consumption significantly above 300 mA is a red flag for
+A power consumption significantly above 250 mA is a red flag for
 either a short circuit (check the breadboard wiring) or an
 inefficient FPGA implementation (e.g., the MMCM is not in bypass
 when idle).
@@ -429,29 +431,36 @@ passband. A non-flat group delay indicates an FFT length error
 
 ### 8.2 Noise-gate threshold accuracy
 
-The noise gate (default `REG_NOISE_FLOOR = 0x0100` ≈ –48 dBFS) is
-expected to zero any bin whose magnitude is below the threshold.
-Test by playing a sine wave at –50 dBFS (below the threshold) and
-verifying the output is silent; then play at –40 dBFS and verify
-the output is at the expected gain. The threshold is accurate to
-within 1 dB.
+The noise gate threshold is part of the per-mode gain table
+shipped inside `mode_ctrl.sv`. The default General mode has
+unity gain everywhere (no gating); the Speech mode applies
+noise gating with a threshold tuned per the
+`tools/profile_gen/gen_default_tables.py` generator. Test by
+playing a sine wave at –50 dBFS (below the threshold) in
+Speech mode and verifying the output is silent; then play
+at –40 dBFS and verify the output is at the expected gain.
+The threshold is accurate to within 1 dB of the pre-computed
+value.
 
 ### 8.3 BLE range and latency
 
-A peripheral measurement, not core to the audio path. With the
-ESP32's on-board antenna, the expected line-of-sight range is
-~10 m. The GATT write-to-mode-change latency is ~50 ms (one
-BLE connection interval). Measure with two phones, one running
-nRF Connect, the other acting as a reference.
+A peripheral measurement, **not applicable** to the FPGA-only
+build. The pre-migration design had an ESP32 BLE bridge; the
+FPGA-only build has no Bluetooth radio. If a future revision
+adds a BLE bridge (separate module, communicating with the FPGA
+over UART or SPI), the expected line-of-sight range is ~10 m and
+the GATT write-to-mode-change latency would be ~50 ms.
 
 ### 8.4 NVS persistence
 
-Verify that a mode / volume / gain-table change persists across
-a power cycle. The acceptance criterion is that after a 5-second
-power-off, the device returns to the same mode, volume, and gain
-table. The latency for the first write to settle in NVS is
-500 ms (the `profile_task` debounce; see
-[`docs/architecture/firmware_arch.md`](architecture/firmware_arch.md) §5.1).
+A peripheral measurement, **not applicable** to the FPGA-only
+build. The pre-migration firmware persisted mode and volume
+across power cycles via NVS; the FPGA-only build does not
+persist anything. On power-up, the FPGA boots in General mode
+with volume at 31 = unity (the expected default for every
+power-up). The 500 ms NVS debounce and the
+`profile_task` described in the historical firmware architecture
+are no longer in the build.
 
 ---
 
@@ -464,12 +473,12 @@ with the same base name.
 
 ```csv
 date,time,measurement,mode,value,unit,expected,pass_fail,notes
-2026-07-15,14:32,latency,Bypass,7.4,ms,<10 ms,PASS,room temp 22C
+2026-07-15,14:32,latency,Bypass (dsp_en=0),7.4,ms,<10 ms,PASS,room temp 22C
 2026-07-15,14:35,latency,General,7.4,ms,<10 ms,PASS,identical to Bypass
 2026-07-15,14:38,latency,Hearing,7.4,ms,<10 ms,PASS,identical to Bypass
-2026-07-15,14:41,snr,Bypass,58.2,dB,>55 dB,PASS,A-weighted
-2026-07-15,14:44,thd,Bypass,0.31,%,<1 %,PASS,1 kHz at -6 dBFS
-2026-07-15,14:47,power,General,232,mA,<300 mA,PASS,ESP32 81 mA + FPGA 151 mA
+2026-07-15,14:41,snr,Bypass (dsp_en=0),58.2,dB,>55 dB,PASS,A-weighted
+2026-07-15,14:44,thd,Bypass (dsp_en=0),0.31,%,<1 %,PASS,1 kHz at -6 dBFS
+2026-07-15,14:47,power,General,172,mA,<300 mA,PASS,Arty S7-25 only (FPGA + codecs)
 2026-07-15,14:52,freq_resp_1k,General,-0.3,dB,0 dB +/- 3 dB,PASS,1 kHz reference
 2026-07-15,14:55,freq_resp_4k,Hearing,11.7,dB,+12 dB +/- 2 dB,PASS,4 kHz bin centre
 ```
@@ -477,7 +486,7 @@ date,time,measurement,mode,value,unit,expected,pass_fail,notes
 The `notes` column captures anything that affects the measurement:
 the room temperature, the laptop model, the INMP441 batch number,
 a description of any visible glitches, the photo filename, and the
-Git commit hash of the firmware and bitstream under test.
+Git commit hash of the bitstream under test.
 
 ### 9.1 Recommended session cadence
 

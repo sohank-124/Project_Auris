@@ -37,10 +37,6 @@
 # generated artefacts.
 /fpga/          @<OWNER>
 
-# ---- ESP32 firmware ----
-# ESP-IDF C firmware, components, partition tables, and SDK config.
-/firmware/      @<OWNER>
-
 # ---- Tools ----
 # Python code generators and bitstream utilities.
 /tools/         @<OWNER>

@@ -96,21 +96,6 @@ module i2s_tx import auris_pkg::*; #(
     logic               sdata_q;
 
     // -------------------------------------------------------------------------
-    // Default initial values (purely for simulation determinism; FFs are
-    // also cleared by the async reset of the always_ff blocks below).
-    // -------------------------------------------------------------------------
-    initial begin
-        tx_shadow_l  = '0;
-        tx_shadow_r  = '0;
-        shift_reg    = '0;
-        bit_cnt      = '0;
-        state        = ST_IDLE;
-        sdata_q      = 1'b0;
-        sdata_o      = 1'b0;
-        underflow_o  = 1'b0;
-    end
-
-    // -------------------------------------------------------------------------
     // Main FSM (clocked on the BCLK rising edge)
     // -------------------------------------------------------------------------
     always_ff @(posedge bclk_i or negedge rst_n_i) begin

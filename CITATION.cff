@@ -19,22 +19,20 @@ license-url: https://opensource.org/licenses/MIT
 repository-code: https://github.com/<OWNER>/project-auris
 url: https://github.com/<OWNER>/project-auris
 abstract: |
-  Project Auris is an open-source hearing-assistive platform that pairs an
-  ESP32 microcontroller with a Xilinx Spartan-7 FPGA to perform real-time
-  spectral audio processing. A 256-point FFT pipeline applies user-
-  configurable per-bin gain profiles, noise gating, and dynamic range
-  compression for hearing-loss compensation and speech enhancement. The
-  repository includes the SystemVerilog RTL for the FPGA, the ESP-IDF C
-  firmware for the ESP32, Python code generators for window coefficients
-  and audiogram-derived gain tables, schematics and a bill of materials
-  for the reference hardware, and the full design documentation that
+  Project Auris is an open-source hearing-assistive platform built around a
+  Xilinx Spartan-7 FPGA that performs real-time spectral audio processing.
+  A 256-point FFT pipeline applies user-configurable per-bin gain profiles,
+  noise gating, and dynamic range compression for hearing-loss compensation
+  and speech enhancement. The repository includes the SystemVerilog RTL
+  for the FPGA, Python code generators for window coefficients and
+  audiogram-derived gain tables, schematics and a bill of materials for
+  the reference hardware, and the full design documentation that
   accompanies the project from skeleton to minimum viable product.
 keywords:
   - fpga
   - hearing-aid
   - dsp
   - fft
-  - esp32
   - open-source-hardware
   - signal-processing
   - xilinx-spartan-7
@@ -45,12 +43,6 @@ references:
       - name: "Advanced Micro Devices, Inc."
     year: 2024
     url: https://www.xilinx.com/products/design-tools/vivado.html
-  - type: software
-    title: "ESP-IDF (Espressif IoT Development Framework)"
-    authors:
-      - name: "Espressif Systems"
-    year: 2024
-    url: https://github.com/espressif/esp-idf
   - type: software
     title: "INMP441 — High Performance, Low Power, Digital Output, Omnidirectional MEMS Microphone with I2S Interface"
     authors:

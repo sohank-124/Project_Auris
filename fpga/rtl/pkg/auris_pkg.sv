@@ -8,9 +8,8 @@
 //              Centralising these in a single package guarantees that the
 //              DSP data widths, the I2S sample width, the FFT length, the
 //              register map and the clock-domain identifiers are all
-//              consistent across the design.  Firmware-side register
-//              definitions in `firmware/.../fpga_config.h` MUST be kept in
-//              lock-step with the localparams defined here.
+//              consistent across the design.  All register definitions are
+//              internal to the FPGA; there is no external host interface.
 //
 // Author:      [generated]
 // Created:     2026-07
@@ -36,11 +35,22 @@ package auris_pkg;
     parameter int unsigned FFT_DATA_W      = 16;         // Q2.14 fixed-point
     parameter int unsigned I2S_DATA_W      = 24;         // INMP441 / PCM5102A
     parameter int unsigned WINDOW_DATA_W   = 16;         // Hann coefficient width
-    parameter int unsigned GAIN_TABLE_DEPTH = 128;       // per-bin gain table
+    parameter int unsigned GAIN_TABLE_DEPTH = FFT_LEN / 2;   // per-bin gain table (real-input FFT: N/2 unique bins)
     parameter int unsigned VOLUME_STEPS    = 32;         // host-facing volume
+    // Volume: 31 levels. Level 31 = unity (0x4000 Q2.14), level 0 = mute.
+    // Linear mapping: vol_q14 = level * (16384 / 31) ≈ level * 529
+    parameter int unsigned VOLUME_LEVELS   = 31;         // 0=mute, 31=unity
+    parameter int unsigned NUM_BUTTONS     = 4;          // BTN0-3
+    parameter int unsigned DEBOUNCE_MS     = 20;         // debounce time
     parameter int unsigned CDC_FIFO_DEPTH  = 4;          // I2S <-> DSP FIFO depth
     parameter int unsigned RESET_STRETCH_CYCLES = 16;    // reset-stretcher length
-    parameter int unsigned BFP_PIPE_DELAY  = 418;        // spectral_proc(4) + IFFT latency for N=256 pipelined streaming (tune after sim)
+    // BFP exponent alignment delay (cycles).
+    // Shifts fft_blk_exp through an SRL pipeline so it arrives at
+    // overlap_add synchronised with the corresponding IFFT output frame.
+    //   spectral_proc  :   4 cycles (4-stage pipeline)
+    //   IFFT (xfft v9.1, pipelined streaming, N=256) : ~414 cycles
+    //   Total          : 4 + 414 = 418 cycles
+    parameter int unsigned BFP_PIPE_DELAY  = 418;
 
     // -------------------------------------------------------------------------
     // Fixed-point helpers (Q2.14 scaling)
@@ -64,9 +74,8 @@ package auris_pkg;
     // assigned to a unique 2-bit code so a single 2-bit field can describe
     // the domain in any status register or log line.
     typedef enum logic [1:0] {
-        CD_I2S = 2'd0,    // 3.072 MHz I2S BCLK domain
-        CD_DSP = 2'd1,    // 96 MHz DSP / MMCM output domain
-        CD_SPI = 2'd2     // 10 MHz SPI SCLK domain
+        CD_I2S = 2'd0,
+        CD_DSP = 2'd1
     } clock_domain_t;
 
     // -------------------------------------------------------------------------
@@ -74,9 +83,9 @@ package auris_pkg;
     // -------------------------------------------------------------------------
     typedef enum logic [1:0] {
         MODE_GENERAL = 2'd0,
-        MODE_HEARING = 2'd1,
-        MODE_SPEECH  = 2'd2,
-        MODE_BYPASS  = 2'd3
+        MODE_SPEECH  = 2'd1,
+        MODE_MUSIC   = 2'd2,
+        MODE_HEARING = 2'd3
     } auris_mode_t;
 
     // -------------------------------------------------------------------------

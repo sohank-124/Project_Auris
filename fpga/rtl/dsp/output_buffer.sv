@@ -118,7 +118,7 @@ module output_buffer import auris_pkg::*; #(
             wr_ptr <= 7'd0;
         end else if (in_v_i) begin
             wr_ptr <= wr_ptr + 1'b1;
-            if (wr_ptr == 7'd127) begin
+            if (wr_ptr == HALF - 1) begin
                 wr_ptr <= 7'd0;
                 wr_buf <= ~wr_buf;
             end
@@ -133,7 +133,7 @@ module output_buffer import auris_pkg::*; #(
             rd_buf    <= 1'b1;   // start by reading half B (half A written first)
             rd_ptr    <= 7'd0;
             buf_valid <= 1'b0;
-        end else if (in_v_i && (wr_ptr == 7'd127)) begin
+        end else if (in_v_i && (wr_ptr == HALF - 1)) begin
             // COMMIT: the half that was just filled becomes the new read half
             rd_buf    <= wr_buf;
             rd_ptr    <= 7'd0;
@@ -141,7 +141,7 @@ module output_buffer import auris_pkg::*; #(
         end else if (sample_clk_en_i && buf_valid) begin
             // NORMAL READ: advance read pointer
             rd_ptr <= rd_ptr + 1'b1;
-            if (rd_ptr == 7'd127) begin
+            if (rd_ptr == HALF - 1) begin
                 rd_ptr    <= 7'd0;
                 buf_valid <= 1'b0;  // consumed the half
             end

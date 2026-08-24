@@ -26,7 +26,7 @@ field empty (no quotes) if the value is unknown for a given part.
 |-------------------|-------------|--------------------------------------------------------------------------|
 | `Item`            | integer     | Sequential line item number starting at 1                                |
 | `Reference`       | string      | Schematic reference designators separated by spaces (e.g., `U1` or `C1 C2 C3`) |
-| `Designator`      | string      | Functional block label: `FPGA` `ESP32` `MIC` `DAC` `BREADBOARD` etc.    |
+| `Designator`      | string      | Functional block label: `FPGA` `MIC` `DAC` `BREADBOARD` etc.    |
 | `Qty`             | integer     | Total quantity of this part required for one build                       |
 | `Description`     | string      | Human-readable description of the part                                   |
 | `Manufacturer`    | string      | Component manufacturer (e.g., `Texas Instruments` or `Generic`)         |
@@ -89,7 +89,7 @@ for the breadboard prototype.
 | Vendor  | Best for                                     | Notes                                                  |
 |---------|----------------------------------------------|--------------------------------------------------------|
 | DigiKey | All major parts; fast USA shipping           | Primary vendor for this project; excellent search     |
-| Mouser  | ESP32, PCM5102A; strong European presence    | Often cheaper than DigiKey on TI parts; good for EMEA  |
+| Mouser  | PCM5102A; strong European presence          | Often cheaper than DigiKey on TI parts; good for EMEA  |
 | LCSC    | Passives, breakout boards                    | Cheapest for passives; 2-3 week shipping to USA       |
 | Amazon  | Breadboard, jumper wires, USB cables         | Fast Prime delivery; watch for counterfeits on cables  |
 | JLCPCB  | PCB fabrication + SMT assembly               | Use together with LCSC for cheapest PCB build          |
@@ -109,7 +109,7 @@ When placing an order, verify:
 - [ ] The `Qty` in the BOM is the per-build quantity (not per-1000 reel)
 - [ ] The `Footprint` matches a KiCad library part for any PCB-bound items
 - [ ] The `MPN` matches the manufacturer brand (some clones exist for
-      ESP32 modules; buy from authorized distributors)
+      FPGA boards; buy from authorized distributors)
 - [ ] The `Datasheet_URL` is current and points to a manufacturer-controlled
       domain (not a third-party PDF host)
 
@@ -118,6 +118,10 @@ When placing an order, verify:
 The INMP441 microphone is **discontinued** at DigiKey and Mouser. See
 [`../../docs/hardware/BOM.md`](../../docs/hardware/BOM.md#alternatives-for-the-inmp441)
 for the list of drop-in substitutes (SPH0645 from Knowles is recommended).
+
+The pre-migration BOM also listed an **ESP32-DevKitC-32E** module;
+this part has been **removed** from the FPGA-only build. The ESP32
+co-processor is no longer in the architecture.
 
 ## Interactive HTML BOM
 

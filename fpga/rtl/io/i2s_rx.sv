@@ -89,17 +89,7 @@ module i2s_rx import auris_pkg::*; #(
     // the host (write 1 to REG_ERROR_FLAGS[ERR_I2S_OVERFLOW]).
     logic pending_overflow;
 
-    // Default assignments for registered outputs (override in always_ff).
-    initial begin
-        left_o          = '0;
-        right_o         = '0;
-        valid_o         = 1'b0;
-        overflow_o      = 1'b0;
-        shift_reg       = '0;
-        bit_cnt         = '0;
-        state           = ST_IDLE;
-        pending_overflow= 1'b0;
-    end
+    // all signals are initialised by the synchronous / asynchronous reset).
 
     // -------------------------------------------------------------------------
     // Main FSM

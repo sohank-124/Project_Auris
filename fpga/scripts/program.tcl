@@ -1,7 +1,7 @@
 # =============================================================================
 # File:        program.tcl
 # Project:     Project Auris
-# Description: Program a built bitstream onto the Cmod S7-25 over the
+# Description: Program a built bitstream onto the Arty S7-25 over the
 #              on-board USB-JTAG bridge (FT2232HQ).
 #
 # Usage:
@@ -15,7 +15,7 @@
 # Pre-requisites:
 #   1. The Digilent cable plugin (or stock Xilinx cable driver) is
 #      installed on this machine.
-#   2. The Cmod S7-25 is connected via USB and powered on.
+#   2. The Arty S7-25 is connected via USB and powered on.
 #   3. Vivado's hw_server is running on the URL given by --url (the
 #      default assumes a local server on port 3121).
 #
@@ -66,7 +66,7 @@ connect_hw_server -url $hw_url
 
 # ---------------------------------------------------------------------------
 # 3. Open the target
-#    On the Cmod S7-25 the FT2232HQ presents a single JTAG chain
+#    On the Arty S7-25 the FT2232HQ presents a single JTAG chain
 #    containing one device, xc7s25_0. open_hw_target without a name
 #    auto-selects the first available target.
 # ---------------------------------------------------------------------------
@@ -76,7 +76,7 @@ open_hw_target
 # ---------------------------------------------------------------------------
 # 4. Identify the FPGA on the chain
 #    get_hw_devices lists every device on the active target. On a
-#    Cmod S7-25 this is a single xc7s25_0.
+#    Arty S7-25 this is a single xc7s25_0.
 # ---------------------------------------------------------------------------
 set devs [get_hw_devices]
 if {[llength $devs] == 0} {

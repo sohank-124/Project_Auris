@@ -2,7 +2,8 @@
 
 > **Project Auris** — Architecture Decision Records (ADR-style) for
 > the key technical choices.
-> **Last updated:** 2026-07
+> **Last updated:** 2026-08-12 (FPGA-only migration: ADR-002 and ADR-007
+> marked Superseded; ADR-009 added)
 > **Status:** Authoritative. New ADRs are appended to the bottom of
 > the log; old ADRs are not edited (they are immutable historical
 > records). The full implementation plan, including per-module
@@ -46,7 +47,7 @@ history of a decision is the full chain of ADRs that reference it.
 
 ---
 
-## ADR-001: Use Cmod S7-25 as FPGA Platform
+## ADR-001: Use Arty S7-25 as FPGA Platform
 
 **Status:** Accepted
 **Date:** 2026-04
@@ -69,8 +70,8 @@ Project Auris needs an FPGA that:
 
 ### Decision
 
-Use the **Digilent Cmod S7-25** (Xilinx Spartan-7 XC7S25-1CSGA225C,
-~14,620 LUTs, 42 BRAMs, 48 DSP48E1s, $59 module).
+Use the **Digilent Arty S7-25** (Xilinx Spartan-7 XC7S25-1CSGA324C,
+~14,620 LUTs, 42 BRAMs, 80 DSP48E1s, $59 module).
 
 ### Consequences
 
@@ -79,12 +80,12 @@ Use the **Digilent Cmod S7-25** (Xilinx Spartan-7 XC7S25-1CSGA225C,
 - 14,620 LUTs is sufficient for the FFT + IFFT + spectral
   processor, with 42 % headroom for Phase 6 features (DRC,
   WDRC, adaptive filters).
-- Two Pmod connectors (2×6 0.1" headers) make breadboard wiring
+- Four Pmod connectors (2×6 0.1" headers) make breadboard wiring
   trivial. No need for a custom PCB until Phase 5.
 - 12 MHz onboard crystal feeds the MMCM; 96 MHz DSP clock
   synthesised cleanly with jitter within the FPGA's data-sheet
   spec.
-- USB-C programming via Vivado Hardware Manager; no separate
+- Micro-USB programming via Vivado Hardware Manager; no separate
   JTAG probe needed.
 - Module cost (~$59) is within the project's BOM budget of
   ~$120 total.
@@ -96,7 +97,7 @@ Use the **Digilent Cmod S7-25** (Xilinx Spartan-7 XC7S25-1CSGA225C,
 - Only 14,620 LUTs; aggressive optimisation is required to fit
   the 256-pt FFT (the FFT IP alone uses ~3,000 LUTs × 2 = 6,000
   LUTs for FFT and IFFT).
-- Only 48 DSP48E1s; the spectral processor and the window
+- Only 80 DSP48E1s; the spectral processor and the window
   multiplier compete for slices. Future WDRC extensions will
   need LUT-based compressors.
 - Speed grade is –1 (the only Spartan-7 grade available for the
@@ -126,10 +127,10 @@ Use the **Digilent Cmod S7-25** (Xilinx Spartan-7 XC7S25-1CSGA225C,
 
 ## ADR-002: Use ESP32 as Controller
 
-**Status:** Accepted
-**Date:** 2026-04
+**Status:** **Superseded by [ADR-009](#adr-009-fpga-only-architecture)** — 2026-08-12
+**Date:** 2026-04 (Accepted) / 2026-08-12 (Superseded)
 
-### Context
+### Context (historical)
 
 Project Auris needs a microcontroller that:
 
@@ -141,6 +142,17 @@ Project Auris needs a microcontroller that:
 - Persists configuration to non-volatile storage (NVS).
 - Is inexpensive (< $15) and breadboard-friendly.
 - Has a free or low-cost toolchain (ESP-IDF).
+
+> **Superseded rationale (2026-08-12):** The FPGA is now the sole
+> control and signal-processing entity. The FPGA generates the I2S
+> clocks on-board (`clk_gen.sv`), drives both codecs (INMP441 and
+> PCM5102A) as the I2S master, and is controlled by the four
+> onboard push buttons (BTN0–BTN3) through inline FSMs in
+> `top.sv`. There is no SPI host interface, no BLE, no NVS
+> persistence, and no firmware at runtime. The migration is
+> documented in [`migration_summary.md`](migration_summary.md). The
+> decision in this ADR is preserved verbatim for the historical
+> record.
 
 ### Decision
 
@@ -519,13 +531,13 @@ analysis (before the FFT) and synthesis (after the IFFT).
 
 ## ADR-007: SPI Register File for ESP32 → FPGA Configuration
 
-**Status:** Accepted
-**Date:** 2026-04
+**Status:** **Superseded by [ADR-009](#adr-009-fpga-only-architecture)** — 2026-08-12
+**Date:** 2026-04 (Accepted) / 2026-08-12 (Superseded)
 
-### Context
+### Context (historical)
 
-The ESP32 needs to configure the FPGA at runtime (mode, volume,
-per-bin gain table). The interface choices are:
+The ESP32 needed to configure the FPGA at runtime (mode, volume,
+per-bin gain table). The interface choices were:
 
 - **Parallel bus (8, 16, or 32 GPIO + chip-select).** Fast,
   but uses many pins (8–32) on both sides.
@@ -556,7 +568,7 @@ with a **128 × 24-bit register file** on the FPGA.
 **Positive:**
 
 - 4 pins total on each side: SCLK, MOSI, MISO, CS_N. Both
-  the Cmod S7-25 and the ESP32 have plenty of free GPIO.
+  the Arty S7-25 and the ESP32 have plenty of free GPIO.
 - 10 MHz clock; one 32-bit transaction is 3.2 µs. A full
   gain-table update (128 bins × 4 bytes = 512 bytes) is
   ~52 µs, well under the 1 ms budget.
@@ -594,7 +606,7 @@ with a **128 × 24-bit register file** on the FPGA.
   (low byte + high byte + address + control). Fast
   but pin-hungry. Rejected: SPI is sufficient.
 - **16-bit parallel bus.** 18 pins. Even faster. Rejected:
-  not enough free pins on the Cmod S7-25's Pmod
+  not enough free pins on the Arty S7-25's Pmod
   connectors (8 pins per Pmod, including power and
   ground).
 
@@ -698,31 +710,28 @@ master volume, and noise-gate threshold.
 
 ## 2. ADR Index
 
-The 8 ADRs above are summarised here for quick reference:
+The ADRs above are summarised here for quick reference:
 
 | ID | Title | Status | Date |
 |----|-------|--------|------|
-| ADR-001 | Use Cmod S7-25 as FPGA Platform | Accepted | 2026-04 |
-| ADR-002 | Use ESP32 as Controller | Accepted | 2026-04 |
+| ADR-001 | Use Arty S7-25 as FPGA Platform | Accepted | 2026-04 |
+| ADR-002 | Use ESP32 as Controller | **Superseded by ADR-009** | 2026-04 (Superseded 2026-08-12) |
 | ADR-003 | Use INMP441 as Microphone | Accepted (R-01 in [`ROADMAP.md`](ROADMAP.md)) | 2026-04 |
 | ADR-004 | Use PCM5102A as DAC | Accepted | 2026-04 |
 | ADR-005 | 256-point FFT | Accepted | 2026-04 |
 | ADR-006 | Hann Window with 50 % Overlap | Accepted | 2026-04 |
-| ADR-007 | SPI Register File for ESP32 → FPGA Configuration | Accepted | 2026-04 |
+| ADR-007 | SPI Register File for ESP32 → FPGA Configuration | **Superseded by ADR-009** | 2026-04 (Superseded 2026-08-12) |
 | ADR-008 | Q2.14 Fixed-Point Arithmetic | Accepted | 2026-04 |
+| ADR-009 | FPGA-Only Architecture | Accepted | 2026-08-12 |
 
 ### 2.1 Future ADRs (to be written)
 
 The following decisions are anticipated but not yet formalised:
 
-- **ADR-009: Custom PCB vs breadboard for Phase 5.** The PCB
-  decision is a 4-layer board, 50 mm × 70 mm, with the Cmod
-  S7-25 and ESP32 as daughter boards. To be written when the
+- **ADR-010: Custom PCB vs breadboard for Phase 5.** The PCB
+  decision is a 4-layer board, 50 mm × 70 mm, carrying the
+  Arty S7-25 as a daughter board. To be written when the
   schematic is finalised.
-- **ADR-010: Bluetooth audio path (A2DP sink) for Phase 4.**
-  The decision to use the ESP32's A2DP API vs an external
-  BT module. To be written when the BLE architecture is
-  implemented.
 - **ADR-011: Battery management for Phase 5.** The decision
   to use a LiPo + TP4056 vs a USB power bank. To be written
   when the enclosure design is finalised.
@@ -732,7 +741,135 @@ The following decisions are anticipated but not yet formalised:
 
 ### 2.2 Superseded ADRs
 
-None. All current ADRs are still in effect.
+The following ADRs have been superseded and are retained verbatim
+for the historical record:
+
+- **ADR-002** ("Use ESP32 as Controller") — Superseded 2026-08-12
+  by ADR-009 (FPGA-Only Architecture). The FPGA is now the sole
+  control and signal-processing entity.
+- **ADR-007** ("SPI Register File for ESP32 → FPGA Configuration")
+  — Superseded 2026-08-12 by ADR-009. There is no SPI host
+  interface in the build; mode, volume, and gain tables are
+  driven by onboard push buttons and inline FSMs in `top.sv`.
+
+For the migration narrative, see
+[`migration_summary.md`](migration_summary.md).
+
+---
+
+## ADR-009: FPGA-Only Architecture
+
+**Status:** Accepted
+**Date:** 2026-08-12
+
+### Context
+
+The pre-migration architecture paired the Spartan-7 FPGA with an
+ESP32-DevKitC-32E microcontroller. The ESP32 generated the I2S
+clocks, owned the user interface (buttons, BLE, RGB LED, NVS
+storage), and configured the FPGA over a 4-wire SPI bus. The
+FPGA did the deterministic signal processing (FFT/IFFT pipeline)
+and reported telemetry back over the same SPI link.
+
+The architecture worked but had three structural costs:
+
+1. **Two development toolchains.** Vivado + Xilinx xfft IP for
+   the FPGA; ESP-IDF + FreeRTOS for the ESP32. Every change
+   touched both. Every debug session required two serial
+   consoles.
+2. **Three clock domains to manage.** DSP at 96 MHz (FPGA MMCM),
+   I2S BCLK at 3.072 MHz (ESP32 I2S peripheral), SPI SCLK at
+   ≤ 10 MHz (ESP32 SPI peripheral). Five crossing points, three
+   CDC strategies.
+3. **A 31-bit SPI control bus** that required a 4-phase
+   req/ack handshake to cross the SPI↔DSP CDC safely.
+
+The pre-migration toolchain install (Vivado + ESP-IDF) was the
+longest task in Phase 0 of the implementation plan, and the
+SPI/reg_file testbenches were the largest sources of bugs in
+the verification audit.
+
+### Decision
+
+Adopt a **FPGA-only architecture**. The FPGA is the sole signal-
+processing, control, and I/O-master entity. There is no firmware
+to flash, no BLE stack, no NVS storage, and no SPI bus. The
+onboard push buttons (BTN0–BTN3) drive inline FSMs in `top.sv`
+for mode and volume; the onboard RGB LED indicates the active
+mode; the status LEDs report pipeline health. The FPGA
+generates BCLK (3.072 MHz) and LRCLK (48 kHz) on-board via
+`clk_gen.sv`.
+
+This decision supersedes ADR-002 (Use ESP32 as Controller) and
+ADR-007 (SPI Register File for ESP32 → FPGA Configuration). The
+modules removed from the build are: `spi_slave.sv`, `reg_file.sv`,
+`cdc_spi_to_dsp.sv`, `cdc_dsp_to_spi.sv`, and the entire ESP-IDF
+firmware tree (`firmware/`). The pre-migration source is
+preserved under `archive/` for the historical record.
+
+### Consequences
+
+**Positive:**
+
+- **One toolchain.** Vivado + SystemVerilog + xsim. One language,
+  one tool, one set of verification artefacts.
+- **Two clock domains instead of three.** The SPI clock domain
+  is gone; the only crossings are I2S↔DSP (two async FIFOs).
+  This simplifies timing closure and removes the SPI framing
+  bug class entirely.
+- **Faster mode changes.** Removing the SPI register-write
+  path cuts ~100 µs of mode-change latency. The mode change is
+  now triggered by a button press and committed in the next FFT
+  frame boundary.
+- **Better educational signal.** A college-admissions reader
+  sees one processor, one clock plan, one pipeline — not two.
+  The DSP, CDC, and control logic all live in the same RTL
+  tree.
+- **Pre-computed per-mode gain tables.** The four modes
+  (General, Speech, Music, Hearing) ship with hand-curated
+  128-bin gain tables inside `mode_ctrl.sv`. Mode change is
+  atomic (single-cycle BRAM bank swap).
+- **Lower BOM cost.** No ESP32 module (~$12 saved) and no
+  second USB cable (~$3 saved). Total ~$15 reduction.
+
+**Negative:**
+
+- **No Bluetooth or Wi-Fi.** The phone-app use case (BLE GATT
+  server for remote mode/volume control) is removed. The
+  user-facing control is entirely the four onboard buttons.
+- **No NVS persistence.** Mode and volume do not survive a
+  power cycle. (In practice, the FPGA boots in General mode
+  with volume at 31 = unity, which is the expected default
+  for every power-up anyway.)
+- **Pre-computed gain tables, not runtime-tunable.** The
+  pre-migration plan allowed per-bin gain updates via the
+  SPI register file. The FPGA-only build ships four fixed
+  per-mode tables; there is no runtime way to fine-tune a
+  single bin.
+- **Three push buttons share pins with the Digilent master
+  XDC.** BTN2 yields the F13 pin from the pre-migration clip
+  LED; the clip indicator moves to LED[2] (G15).
+
+### Alternatives Considered
+
+- **Keep the ESP32 for BLE only.** Strip the SPI control plane
+  but keep the ESP32 as a BLE bridge. Rejected: removes the
+  primary motivation for the ESP32 (control + configuration)
+  while keeping the second toolchain. The FPGA-only build is
+  simpler.
+- **Use the Zynq-7000 (Arty Z7).** Combines an FPGA with a
+  hard ARM core; no ESP32 needed. Rejected: doubles the BOM
+  cost; the Spartan-7 has plenty of headroom for the design.
+- **Add a soft-core microcontroller on the FPGA (MicroBlaze
+  or RISC-V).** Enables firmware without the ESP32. Rejected:
+  defeats the goal of a single-clock-domain DSP pipeline.
+  Adds latency and resource cost without changing the
+  architectural story.
+- **Keep both the ESP32 and the FPGA, but route the I2S
+  clocks from the FPGA.** Splits the difference. Rejected:
+  the ESP32 still owns the user interface (buttons, BLE,
+  NVS), which means the second toolchain stays. The
+  FPGA-only build was the cleaner cut.
 
 ---
 

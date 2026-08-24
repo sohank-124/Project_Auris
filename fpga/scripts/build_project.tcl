@@ -1,7 +1,7 @@
 # =============================================================================
 # File:        build_project.tcl
 # Project:     Project Auris — FPGA-Accelerated Assistive Audio
-# Target:      Digilent Cmod S7-25 (Spartan-7 XC7S25-1CSGA225C)
+# Target:      Digilent Arty S7-25 Rev. E (Spartan-7 XC7S25-1CSGA324C)
 #
 # Description: Vivado PROJECT-MODE build script.
 #
@@ -14,7 +14,7 @@
 #
 # Optional TCL args:
 #   --clean       : wipe the project directory before recreating
-#   --part <str>  : override the target part (default XC7S25-1CSGA225C)
+#   --part <str>  : override the target part (default XC7S25-1CSGA324C)
 #   --jobs  <n>   : parallel synthesis / implementation jobs (default 4)
 #
 # Steps performed:
@@ -47,7 +47,7 @@ set sim_dir    [file normalize "${script_dir}/../sim"]
 # ---------------------------------------------------------------------------
 set do_clean 0
 set jobs     4
-set part "xc7s25csga225-1"
+set part "xc7s25csga324-1"
 for {set i 0} {$i < [llength $argv]} {incr i} {
     set a [lindex $argv $i]
     switch -- $a {
@@ -79,12 +79,10 @@ puts "  do_clean   = $do_clean"
 puts "============================================================"
 
 # ---------------------------------------------------------------------------
-# 3. (optional) Wipe previous project
+# 3. Wipe previous project so no stale cache pollutes the new one.
+#    file delete -force is a no-op when $proj_dir does not exist.
 # ---------------------------------------------------------------------------
-if {$do_clean} {
-    puts "Cleaning previous project at $proj_dir ..."
-    file delete -force $proj_dir
-}
+file delete -force $proj_dir
 
 # ---------------------------------------------------------------------------
 # 4. Create the project
@@ -103,19 +101,13 @@ set_property simulator_language Mixed   [current_project]
 # 5. Add RTL sources (recursive over all subdirectories)
 # ---------------------------------------------------------------------------
 puts "Adding RTL from $rtl_dir ..."
-# Recursively collect all .v / .sv files under $rtl_dir.
-# NOTE: Tcl's [glob] does NOT support the ** recursive pattern (unlike
-# bash or Python).  We walk subdirectories explicitly.
-proc add_rtl_recursive {dir} {
-    set files [glob -nocomplain -directory $dir *.v *.sv]
-    if {[llength $files] > 0} {
-        add_files -fileset sources_1 {*}$files
-    }
-    foreach subdir [glob -nocomplain -directory $dir -type d *] {
-        add_rtl_recursive $subdir
-    }
-}
-add_rtl_recursive $rtl_dir
+# Vivado's add_files natively recurses into directories: passing a
+# directory path (rather than individual file paths) causes Vivado to
+# discover every file with a valid extension (.sv, .v, .vhd, etc.)
+# under that directory and all its descendants.  This relies on
+# Vivado's built-in filesystem walk, which reaches any directory
+# depth — no Tcl glob recursion is needed.
+add_files -fileset sources_1 $rtl_dir
 
 # Make the design's top module explicit. The top is the file-level
 # SystemVerilog module `top`, NOT a file name.
@@ -165,9 +157,15 @@ set xfft_cfg [list \
 ]
 
 # 7b. FFT instance
+#     Wipe any previous output directory first: if stale fft_256_core(_N)
+#     subdirs are present, Vivado silently appends a _N suffix to the new
+#     one, which is how dozens of stale versions accumulated here.
+#     The -dir target must exist (create_ip does not create it).
 if {[llength [get_ips fft_256_core]] > 0} {
     remove_ip [get_ips fft_256_core]
 }
+file delete -force [file join $ip_dir fft_256_core]
+file mkdir [file join $ip_dir fft_256_core]
 create_ip -name xfft -vendor xilinx.com -library ip -version 9.1 \
     -module_name fft_256_core \
     -dir [file join $ip_dir fft_256_core]
@@ -178,6 +176,8 @@ generate_target all [get_ips fft_256_core]
 if {[llength [get_ips ifft_256_core]] > 0} {
     remove_ip [get_ips ifft_256_core]
 }
+file delete -force [file join $ip_dir ifft_256_core]
+file mkdir [file join $ip_dir ifft_256_core]
 create_ip -name xfft -vendor xilinx.com -library ip -version 9.1 \
     -module_name ifft_256_core \
     -dir [file join $ip_dir ifft_256_core]

@@ -1,31 +1,69 @@
 // =============================================================================
 // File:        top.sv
-// Project:     Project Auris
+// Project:     Project Auris — FPGA-Accelerated Assistive Audio
 // Module:      top
-// Description: Top-level wrapper for the Cmod S7-25 FPGA (XC7S25-1CSGA225C).
-//              Integrates every sub-module of the design:
+// Description: Top-level wrapper for the Digilent Arty S7-25 (XC7S25-1CSGA324C).
+//              This is the FPGA-only architecture: there is NO host interface,
+//              NO SPI slave, NO ESP32, and NO reg_file.  Every control input
+//              is sourced from the four onboard push buttons, and the I2S
+//              clocks (BCLK and LRCLK) are generated inside the FPGA rather
+//              than received from an external master.
 //
-//                * clk_gen            — 12 MHz → 96 MHz via MMCME2_BASE
-//                * reset generators   — 2-FF sync + 16-cycle SRL stretcher
-//                                       in each of 3 clock domains
-//                * i2s_rx / i2s_tx    — INMP441 / PCM5102A bridges
-//                * spi_slave          — ESP32 register-access interface
-//                * cdc_i2s_to_dsp x2  — left + right audio path (RX)
-//                * cdc_dsp_to_i2s x2  — left + right audio path (TX)
-//                * cdc_spi_to_dsp     — control-path handshake
-//                * cdc_dsp_to_spi     — read-data 2-FF sync
-//                * reg_file           — SPI-facing register storage
-//                * mode_ctrl          — mode → default gain tables
-//                * dsp_pipeline       — full spectral processing chain
-//                * status_mon         — heartbeat + clip-event latch
+//              Onboard resources integrated here:
+//                * clk_gen        — 12 MHz → 96 MHz DSP clock (MMCME2_BASE),
+//                                    plus generated 3.072 MHz I2S BCLK and
+//                                    48 kHz I2S LRCLK.  The FPGA is the
+//                                    I2S master for both RX (INMP441) and
+//                                    TX (PCM5102A) directions.
+//                * reset_sync_stretch — 2-FF synchroniser + 16-bit SRL
+//                                    reset-stretcher, one per clock domain
+//                                    (DSP and I2S only — no SPI).
+//                * btn_debounce   — 4 active-low push buttons, 20 ms debounce
+//                                    with press / release pulse outputs.
+//                * i2s_rx / i2s_tx — INMP441 MEMS-mic receiver and PCM5102A
+//                                    DAC transmitter, both running in the
+//                                    FPGA-generated I2S BCLK domain.
+//                * cdc_i2s_to_dsp — 2× small async FIFOs (L+R) crossing
+//                                    audio from the 3.072 MHz BCLK domain
+//                                    into the 96 MHz DSP domain.
+//                * cdc_dsp_to_i2s — 2× small async FIFOs (L+R) crossing
+//                                    audio from the 96 MHz DSP domain back
+//                                    into the 3.072 MHz BCLK domain.
+//                * mode_ctrl      — loads pre-computed per-mode gain tables
+//                                    into the inactive bank of the
+//                                    spectral_proc's dual-port gain BRAM.
+//                * dsp_pipeline   — full spectral processing chain
+//                                    (input_buf → Hann window → FFT →
+//                                    spectral_proc → IFFT → overlap-add
+//                                    → volume → output_buf → bypass mux).
+//                * status_mon     — 1 Hz heartbeat + sticky clip-event latch.
 //
-//              The RGB LED colour is mode-dependent (active-low drive)
-//              and provides at-a-glance status feedback without the
-//              need for a console.
+//              User controls (all via onboard push buttons):
+//                BTN0 — mode increment  (cycles GENERAL → SPEECH → MUSIC →
+//                       HEARING → GENERAL …)
+//                BTN1 — mode decrement
+//                BTN2 — volume up       (clamped at 31 = unity)
+//                BTN3 — volume down     (clamped at 0 = mute)
+//
+//              Indicators:
+//                STATUS0 (status_led_o)  — 1 Hz heartbeat when the FPGA is
+//                                           healthy and out of reset.
+//                STATUS1 (status_clip_o) — sticky clip-event indicator;
+//                                           cleared on FPGA reset only.
+//                RGB LED                 — mode-dependent colour, active-low
+//                                           drive on the Arty S7-25:
+//                                             green   = General (mode 0)
+//                                             blue    = Speech  (mode 1)
+//                                             magenta = Music   (mode 2)
+//                                             red     = Hearing (mode 3)
 //
 // Author:      [generated]
 // Created:     2026-07
-// Target:      Digilent Cmod S7-25 (XC7S25-1CSGA225C)
+// Modified:    2026-08 (FPGA-only migration: removed SPI / reg_file /
+//                       ESP32 control plane; onboard push buttons are now
+//                       the only user control surface; I2S clocks are now
+//                       generated by the FPGA rather than received)
+// Target:      Digilent Arty S7-25 (XC7S25-1CSGA324C)
 // =============================================================================
 `default_nettype none
 `timescale 1ns / 1ps
@@ -36,34 +74,36 @@ module top import auris_pkg::*; #(
     // -----------------------------------------------------------------------
     // Power / programming
     // -----------------------------------------------------------------------
-    input  wire        clk_12mhz,         // onboard 12 MHz oscillator
+    input  wire        clk_12mhz,          // onboard 12 MHz oscillator
 
     // -----------------------------------------------------------------------
-    // Pmod JA: SPI to ESP32 + 2 status pins
-    //   Pin assignments: see cmod_s7_25.xdc
-    //   JA1=SCLK, JA2=MOSI, JA3=MISO, JA4=CS, JA7=STATUS0, JA8=STATUS1
+    // Onboard push buttons (active-low on Arty S7-25)
+    //   BTN0 = mode+    BTN1 = mode-
+    //   BTN2 = vol+     BTN3 = vol-
     // -----------------------------------------------------------------------
-    (* clock_buffer_type = "none" *)
-    input  wire        spi_sclk_i,
-    input  wire        spi_mosi_i,
-    output wire        spi_miso_o,
-    input  wire        spi_cs_n_i,
-    output wire        status_led_o,       // STATUS0: heartbeat / ready
-    output wire        status_clip_o,      // STATUS1: clipping indicator
+    input  wire [3:0]  btn_i,
 
     // -----------------------------------------------------------------------
-    // Pmod JA (pins 7-10): I2S to/from ESP32 I2S peripheral
-    //   Note: ESP32 is the I2S master, FPGA is the slave
-    //   JA7=BCLK_IN,  JA8=LRCLK_IN, JA9=ADC_DATA, JA10=DAC_DATA
+    // I2S to/from audio codecs (FPGA is the I2S master)
+    //   i2s_bclk_o / i2s_lrclk_o are GENERATED by clk_gen and routed to
+    //   the codec pins.  i2s_adc_data_i is sampled from the INMP441 SD;
+    //   i2s_dac_data_o is driven to the PCM5102A DIN.
     // -----------------------------------------------------------------------
-    (* clock_buffer_type = "none" *)
-    input  wire        i2s_bclk_i,
-    input  wire        i2s_lrclk_i,        // 0 = left, 1 = right
-    input  wire        i2s_adc_data_i,     // from INMP441
-    output wire        i2s_dac_data_o,     // to PCM5102A
+    output wire        i2s_bclk_o,         // 3.072 MHz I2S bit clock
+    output wire        i2s_lrclk_o,        // 48 kHz I2S word select
+    input  wire        i2s_adc_data_i,     // from INMP441 SD
+    output wire        i2s_dac_data_o,     // to PCM5102A DIN
 
     // -----------------------------------------------------------------------
-    // Onboard RGB LED (active low on Cmod S7-25)
+    // Onboard status LEDs
+    //   STATUS0: 1 Hz heartbeat (FPGA healthy when toggling)
+    //   STATUS1: sticky clip-event indicator
+    // -----------------------------------------------------------------------
+    output wire        status_led_o,       // STATUS0: heartbeat
+    output wire        status_clip_o,      // STATUS1: clip indicator
+
+    // -----------------------------------------------------------------------
+    // Onboard RGB LED (active low on Arty S7-25)
     // -----------------------------------------------------------------------
     output logic       led_rgb_r,
     output logic       led_rgb_g,
@@ -73,11 +113,10 @@ module top import auris_pkg::*; #(
     // -------------------------------------------------------------------------
     // Local nets — clock and reset
     // -------------------------------------------------------------------------
-    logic clk_96mhz;          // DSP clock from MMCM
+    logic clk_96mhz;          // 96 MHz DSP clock from MMCM
     logic clk_dsp_locked;     // MMCM lock signal -> system reset source
-    logic rst_dsp_n;          // active-low reset in DSP domain
-    logic rst_i2s_n;          // active-low reset in I2S BCLK domain
-    logic rst_spi_n;          // active-low reset in SPI SCLK domain
+    logic rst_dsp_n;          // active-low reset in the DSP domain
+    logic rst_i2s_n;          // active-low reset in the I2S BCLK domain
 
     // -------------------------------------------------------------------------
     // Local nets — I2S RX path (BCLK domain)
@@ -96,147 +135,144 @@ module top import auris_pkg::*; #(
     logic                  i2s_tx_underflow;
 
     // -------------------------------------------------------------------------
-    // Local nets — SPI path (SCLK domain, 10 MHz)
+    // Local nets — button debounce
     // -------------------------------------------------------------------------
-    logic [6:0]            spi_addr;
-    logic [23:0]           spi_wdata;
-    logic                  spi_we;
-    logic                  spi_re;
-    logic [23:0]           spi_rdata;
-    logic                  spi_rdata_valid;
+    // btn_pressed         — current debounced state (active-high: 1 = pressed)
+    // btn_press_pulse     — 1-cycle pulse on the leading  edge of a press
+    // btn_release_pulse   — 1-cycle pulse on the trailing edge of a press
+    logic [3:0] btn_pressed;
+    logic [3:0] btn_press_pulse;
+    logic [3:0] btn_release_pulse;
 
     // -------------------------------------------------------------------------
-    // Local nets — DSP-facing control / status
+    // Local nets — mode / volume control (DSP domain)
     // -------------------------------------------------------------------------
-    logic [1:0]            reg_dsp_mode;
-    logic [23:0]           reg_dsp_master_gain;
-    logic [23:0]           reg_dsp_noise_floor;
-    logic [23:0]           reg_dsp_gate_ratio;
-    logic [6:0]            reg_dsp_gain_addr;
-    logic [15:0]           reg_dsp_gain_wdata;
-    logic                  reg_dsp_gain_we;
-    logic [1:0]            reg_dsp_gain_bank_id;
-    logic                  reg_dsp_bank_commit;
-
-    logic                  mode_bank_we;
-    logic [6:0]            mode_bank_addr;
-    logic [15:0]           mode_bank_wdata;
-    logic [1:0]            mode_bank_sel;
-    logic                  mode_bank_commit;
-
-    logic [23:0]           mode_default_master_gain;
-    logic [23:0]           mode_default_noise_floor;
-    logic [23:0]           mode_default_gate_ratio;
-
-    logic [23:0]           dsp_peak_in;
-    logic [23:0]           dsp_peak_out;
-    logic [31:0]           dsp_frame_count;
-    logic [7:0]            dsp_error_flags;
-    logic                  dsp_clip_event;
+    // current_mode    — 2-bit mode select (0..3, wraps on overflow/underflow)
+    // mode_we_pulse   — 1-cycle pulse on every mode change; consumed by
+    //                   mode_ctrl to reload the per-mode gain table.
+    // volume_level    — 5-bit volume (0 = mute, 31 = unity Q2.14).
+    logic [1:0] current_mode;
+    logic       mode_we_pulse;
+    logic [4:0] volume_level;
 
     // -------------------------------------------------------------------------
-    // CDC nets — I2S → DSP (post-CDC signals, in DSP domain)
+    // Local nets — mode controller outputs (DSP domain)
     // -------------------------------------------------------------------------
+    // mode_ctrl owns the inactive bank of the spectral BRAM during a table
+    // load and streams 128 gain coefficients via this interface:
+    //   mode_bank_we      — single-cycle write strobe per bin
+    //   mode_bank_addr    — 7-bit bin address
+    //   mode_bank_wdata   — 16-bit Q2.14 gain coefficient
+    //   mode_bank_sel     — 2-bit bank select (which bank is being loaded)
+    //   mode_bank_commit  — single-cycle pulse when the load is complete;
+    //                       spectral_proc atomically swaps banks on this edge.
+    logic        mode_bank_we;
+    logic [6:0]  mode_bank_addr;
+    logic [15:0] mode_bank_wdata;
+    logic [1:0]  mode_bank_sel;
+    logic        mode_bank_commit;
+
+    // -------------------------------------------------------------------------
+    // Local nets — DSP telemetry
+    // -------------------------------------------------------------------------
+    logic [23:0] dsp_peak_in;
+    logic [23:0] dsp_peak_out;
+    logic [31:0] dsp_frame_count;
+    logic [7:0]  dsp_error_flags;
+    logic        dsp_clip_event;
+
+    // -------------------------------------------------------------------------
+    // Local nets — CDC: I2S → DSP
+    // -------------------------------------------------------------------------
+    // dsp_sample_l/r     — audio sample after the CDC crossing (DSP domain)
+    // dsp_sample_valid   — 1-cycle pulse per "empty → non-empty" transition
+    // cdc_l_empty / _r   — empty flags from the L and R CDC FIFOs
+    // cdc_l_empty_d / _r — previous-cycle empty flags (for edge detect)
     logic [I2S_DATA_W-1:0] dsp_sample_l;
     logic [I2S_DATA_W-1:0] dsp_sample_r;
     logic                  dsp_sample_valid;
-
-    // -------------------------------------------------------------------------
-    // CDC nets — DSP → I2S (post-CDC signals, in BCLK domain)
-    // -------------------------------------------------------------------------
-    logic                  i2s_tx_l_empty;
-    logic                  i2s_tx_r_empty;
-
-    // -------------------------------------------------------------------------
-    // CDC nets — SPI ↔ DSP
-    // -------------------------------------------------------------------------
-    logic [6:0]            cdc_dst_addr;
-    logic [23:0]           cdc_dst_wdata;
-    logic                  cdc_dst_we;
-    logic                  cdc_dst_re;
-
-    // -------------------------------------------------------------------------
-    // Mode-change pulse for mode_ctrl
-    // -------------------------------------------------------------------------
-    // reg_file doesn't expose a "mode was written" strobe, so we
-    // synthesise one in top by edge-detecting the mode register.
-    logic [1:0]            reg_dsp_mode_d;
-    logic                  mode_we_pulse;
-
-    // -------------------------------------------------------------------------
-    // DSP pipeline outputs (declared here because dsp_pipeline is instantiated
-    // later in the file but its outputs are needed by the DSP->I2S CDC FIFOs
-    // and by the valid-pulse generator below)
-    // -------------------------------------------------------------------------
-    logic [23:0]           dsp_out_l;
-    logic [23:0]           dsp_out_r;
-    logic                  dsp_out_valid;
-
-    // -------------------------------------------------------------------------
-    // DSP-domain output strobe (1-cycle pulse per new output sample)
-    // -------------------------------------------------------------------------
-    // SINGLE driver: the wire declaration with the continuous assignment
-    // below is the only driver of dsp_out_valid_pulse.  The previous
-    // duplicate `assign dsp_out_valid_pulse = ...` block (further down
-    // the file) has been removed to eliminate the multi-driver error.
-    logic                  dsp_out_valid_d;
-    wire                   dsp_out_valid_pulse = dsp_out_valid & ~dsp_out_valid_d;
-
-    // -------------------------------------------------------------------------
-    // Local nets — control/status propagation
-    // -------------------------------------------------------------------------
-    // dsp_enable:        reg_file's combinational mirror of REG_CONTROL[0],
-    //                    routed to dsp_pipeline.dsp_enable_i to gate the
-    //                    pipeline (1 = run, 0 = bypass).
-    // clip_clear_pulse:  reg_file's 1-cycle pulse on REG_STATUS read,
-    //                    routed to status_mon.clip_clear_i to clear the
-    //                    sticky clip-event latch.
-    logic                  dsp_enable;
-    logic                  clip_clear_pulse;
-
-    // -------------------------------------------------------------------------
-    // I2S-domain LRCLK falling-edge detector (BCLK-synchronous)
-    // -------------------------------------------------------------------------
-    logic                  i2s_lrclk_s;
-    logic                  i2s_lrclk_s_d;
-    wire                   i2s_lrclk_fall = i2s_lrclk_s_d & ~i2s_lrclk_s;
-
-    // -------------------------------------------------------------------------
-    // CDC FIFO empty flags (I2S → DSP, DSP domain)
-    // -------------------------------------------------------------------------
     logic                  cdc_l_empty;
     logic                  cdc_r_empty;
     logic                  cdc_l_empty_d;
     logic                  cdc_r_empty_d;
 
     // -------------------------------------------------------------------------
-    // Constants — version register values
+    // Local nets — CDC: DSP → I2S
     // -------------------------------------------------------------------------
-    // FW_VERSION: bitstream semantic-version register. Encoding is
-    // semver-packed into 24 bits: [23:16]=major, [15:8]=minor, [7:0]=patch.
-    // 0x000100 = v0.1.0 (initial FPGA bring-up).
-    localparam logic [23:0] FW_VERSION = 24'h00_01_00;
-    localparam logic [23:0] HW_VERSION = {17'd0, REG_HW_VERSION};
+    // i2s_tx_l/r_empty   — empty flags from the L and R CDC FIFOs
+    logic                  i2s_tx_l_empty;
+    logic                  i2s_tx_r_empty;
 
     // -------------------------------------------------------------------------
-    // Clock generation
+    // Local nets — DSP pipeline outputs
     // -------------------------------------------------------------------------
+    // dsp_out_l/r        — audio sample after the pipeline (DSP domain)
+    // dsp_out_valid      — 1-cycle pulse per new pipeline output sample
+    // dsp_out_valid_pulse — single-cycle pulse on the rising edge of
+    //                       dsp_out_valid; drives the DSP→I2S CDC write.
+    // dsp_out_valid_d    — previous-cycle dsp_out_valid (edge detector FF)
+    logic [23:0] dsp_out_l;
+    logic [23:0] dsp_out_r;
+    logic        dsp_out_valid;
+    logic        dsp_out_valid_d;
+    wire         dsp_out_valid_pulse = dsp_out_valid & ~dsp_out_valid_d;
+
+    // -------------------------------------------------------------------------
+    // Local nets — LRCLK synchroniser (BCLK domain)
+    // -------------------------------------------------------------------------
+    // The FPGA-generated i2s_lrclk_o is synchronous with i2s_bclk_o (both
+    // derive from the same MMCM), but the 2-FF synchroniser is kept as a
+    // defensive measure: any future change to source LRCLK from an
+    // asynchronous pin would otherwise require a risky in-place retiming.
+    // The synchroniser plus a 1-cycle delay register yields a clean
+    // i2s_lrclk_fall strobe for the CDC read-side.
+    (* ASYNC_REG = "TRUE" *) logic [1:0] i2s_lrclk_sync;
+    logic i2s_lrclk_s;
+    logic i2s_lrclk_s_d;
+    wire  i2s_lrclk_fall = i2s_lrclk_s_d & ~i2s_lrclk_s;
+
+    // -------------------------------------------------------------------------
+    // Local nets — status monitor outputs
+    // -------------------------------------------------------------------------
+    logic status_heartbeat;
+    logic status_clip_latch;
+
+    // =========================================================================
+    // Clock generation
+    // =========================================================================
+    // Generates three clocks from the 12 MHz onboard oscillator:
+    //   clk_dsp_o   = 96 MHz DSP clock (MMCME2_BASE)
+    //   i2s_bclk_o  = 3.072 MHz I2S bit clock (fractional divide from 96 MHz)
+    //   i2s_lrclk_o = 48 kHz I2S word select (÷64 from BCLK)
+    //
+    // The `locked` output is used as the system reset source — every
+    // downstream reset is generated from this single clean async-low signal.
     clk_gen u_clk_gen (
-        .clk_in1   (clk_12mhz),
-        .clk_out1  (clk_96mhz),
-        .locked    (clk_dsp_locked)
+        .clk_in1    (clk_12mhz),
+        .clk_dsp_o  (clk_96mhz),
+        .i2s_bclk_o (i2s_bclk_o),
+        .i2s_lrclk_o(i2s_lrclk_o),
+        .locked     (clk_dsp_locked)
     );
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // Reset generators (one per clock domain)
-    // -------------------------------------------------------------------------
-    // Each generator:
-    //   * 2-FF synchronises the source reset into the destination clock
-    //   * 16-bit shift register provides the 16-cycle stretch
+    // =========================================================================
+    // Only TWO domains need reset infrastructure in the FPGA-only build:
+    //   * DSP  — 96 MHz, used by the button debouncer, mode/volume FSMs,
+    //            mode_ctrl, dsp_pipeline, and status_mon.
+    //   * I2S  — 3.072 MHz BCLK, used by i2s_rx, i2s_tx, the LRCLK
+    //            synchroniser, and the DSP→I2S CDC FIFOs.
+    //
+    // The SPI domain is gone: there is no SPI slave, no cdc_spi_to_dsp,
+    // no cdc_dsp_to_spi.  Removing the third reset generator eliminates
+    // ~30 FFs and one SRL16E chain.
+    //
+    // Each generator provides:
+    //   * 2-FF synchroniser into the destination clock domain
+    //   * (STRETCH_CYCLES)-bit shift register forming the reset stretcher
     //   * Async assert (via async clear of the FFs)
     //   * Sync deassert (via the shift register filling with 1s)
-    // -------------------------------------------------------------------------
-
     reset_sync_stretch #(
         .STRETCH_CYCLES (RESET_STRETCH_CYCLES)
     ) u_rst_dsp (
@@ -249,62 +285,130 @@ module top import auris_pkg::*; #(
         .STRETCH_CYCLES (RESET_STRETCH_CYCLES)
     ) u_rst_i2s (
         .src_rst_n_i (clk_dsp_locked),
-        .dst_clk_i   (i2s_bclk_i),
+        .dst_clk_i   (i2s_bclk_o),
         .dst_rst_n_o (rst_i2s_n)
     );
 
-    reset_sync_stretch #(
-        .STRETCH_CYCLES (RESET_STRETCH_CYCLES)
-    ) u_rst_spi (
-        .src_rst_n_i (clk_dsp_locked),
-        .dst_clk_i   (spi_sclk_i),
-        .dst_rst_n_o (rst_spi_n)
+    // =========================================================================
+    // Button debounce
+    // =========================================================================
+    // 4 active-low buttons, 20 ms debounce.  Produces per-button:
+    //   btn_pressed_o       — current debounced state (active-high)
+    //   btn_press_pulse_o   — 1-cycle pulse on the leading edge
+    //   btn_release_pulse_o — 1-cycle pulse on the trailing edge
+    //
+    // We only consume btn_press_pulse in this build — release pulses are
+    // left available for any future "long-press" detection logic.
+    btn_debounce #(
+        .CLK_FREQ_HZ (96_000_000),
+        .DEBOUNCE_MS (20),
+        .NUM_BUTTONS (4)
+    ) u_btn_debounce (
+        .clk_i              (clk_96mhz),
+        .rst_n_i            (rst_dsp_n),
+        .btn_i              (btn_i),
+        .btn_pressed_o      (btn_pressed),
+        .btn_press_pulse_o  (btn_press_pulse),
+        .btn_release_pulse_o(btn_release_pulse)
     );
 
-    // -------------------------------------------------------------------------
-    // I2S LRCLK 2-FF synchroniser (for the DSP → I2S CDC consume pulse)
-    // -------------------------------------------------------------------------
-    (* ASYNC_REG = "TRUE" *) logic [1:0] i2s_lrclk_sync;
-    always_ff @(posedge i2s_bclk_i or negedge rst_i2s_n) begin
-        if (!rst_i2s_n) i2s_lrclk_sync <= 2'b00;
-        else            i2s_lrclk_sync <= {i2s_lrclk_sync[0], i2s_lrclk_i};
+    // =========================================================================
+    // Mode controller (inline FSM in the DSP domain)
+    // =========================================================================
+    // BTN0 cycles mode UP   (GENERAL → SPEECH → MUSIC → HEARING → GENERAL …)
+    // BTN1 cycles mode DOWN (reverse direction).
+    // Unsigned 2-bit arithmetic provides natural wrap-around (0 - 1 = 3).
+    //
+    // mode_we_pulse fires on every mode change; mode_ctrl consumes this
+    // pulse to load the per-mode gain table into the spectral BRAM.
+    always_ff @(posedge clk_96mhz or negedge rst_dsp_n) begin
+        if (!rst_dsp_n) begin
+            current_mode  <= 2'd0;
+            mode_we_pulse <= 1'b0;
+        end else begin
+            // Default: pulse is single-cycle.
+            mode_we_pulse <= 1'b0;
+            if (btn_press_pulse[0]) begin
+                current_mode  <= current_mode + 2'd1;
+                mode_we_pulse <= 1'b1;
+            end else if (btn_press_pulse[1]) begin
+                current_mode  <= current_mode - 2'd1;
+                mode_we_pulse <= 1'b1;
+            end
+        end
     end
-    assign i2s_lrclk_s   = i2s_lrclk_sync[1];
-    always_ff @(posedge i2s_bclk_i or negedge rst_i2s_n) begin
+
+    // =========================================================================
+    // Volume controller (inline counter in the DSP domain)
+    // =========================================================================
+    // BTN2 = volume up   (saturates at 31 = unity Q2.14)
+    // BTN3 = volume down (saturates at 0  = mute)
+    //
+    // The 5-bit value is consumed by dsp_pipeline.volume_i and mapped to a
+    // Q2.14 multiplier inside volume_ctrl.  See dsp/dsp_pipeline.sv and
+    // dsp/volume_ctrl.sv for the Q2.14 mapping (level * 16384/31).
+    always_ff @(posedge clk_96mhz or negedge rst_dsp_n) begin
+        if (!rst_dsp_n) begin
+            volume_level <= 5'd31;          // start at unity
+        end else begin
+            if (btn_press_pulse[2] && (volume_level < 5'd31))
+                volume_level <= volume_level + 5'd1;
+            else if (btn_press_pulse[3] && (volume_level > 5'd0))
+                volume_level <= volume_level - 5'd1;
+        end
+    end
+
+    // =========================================================================
+    // LRCLK 2-FF synchroniser (I2S BCLK domain)
+    // =========================================================================
+    // Produces i2s_lrclk_fall: a 1-BCLK-cycle pulse aligned to the
+    // LRCLK 1→0 transition.  This strobe is used by the DSP→I2S CDC
+    // read-side to consume one L/R pair exactly once per I2S frame.
+    always_ff @(posedge i2s_bclk_o or negedge rst_i2s_n) begin
+        if (!rst_i2s_n) i2s_lrclk_sync <= 2'b00;
+        else            i2s_lrclk_sync <= {i2s_lrclk_sync[0], i2s_lrclk_o};
+    end
+    assign i2s_lrclk_s = i2s_lrclk_sync[1];
+
+    always_ff @(posedge i2s_bclk_o or negedge rst_i2s_n) begin
         if (!rst_i2s_n) i2s_lrclk_s_d <= 1'b0;
         else            i2s_lrclk_s_d <= i2s_lrclk_s;
     end
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // I2S slave receiver
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // Receives 24-bit L/R samples from the INMP441 on each LRCLK frame.
+    // valid_o is a 1-BCLK-cycle pulse fired in ST_VALID; overflow_o is a
+    // sticky indicator that the host (in this build: nowhere — sticky
+    // observability only) can read.
     i2s_rx #(
         .DATA_W (I2S_DATA_W)
     ) u_i2s_rx (
-        .bclk_i      (i2s_bclk_i),
-        .lrclk_i     (i2s_lrclk_i),
-        .sdata_i     (i2s_adc_data_i),
-        .rst_n_i     (rst_i2s_n),
-        .left_o      (i2s_rx_l_data),
-        .right_o     (i2s_rx_r_data),
-        .valid_o     (i2s_rx_valid),
-        .overflow_o  (i2s_rx_overflow)
+        .bclk_i     (i2s_bclk_o),
+        .lrclk_i    (i2s_lrclk_o),
+        .sdata_i    (i2s_adc_data_i),
+        .rst_n_i    (rst_i2s_n),
+        .left_o     (i2s_rx_l_data),
+        .right_o    (i2s_rx_r_data),
+        .valid_o    (i2s_rx_valid),
+        .overflow_o (i2s_rx_overflow)
     );
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // I2S slave transmitter
-    // -------------------------------------------------------------------------
-    // The TX consumes a sample from the CDC every LRCLK falling edge
-    // when the CDC is non-empty.  valid_i is the level "data available"
-    // signal; the i2s_tx module samples it combinationally at the
-    // LRCLK falling edge.
+    // =========================================================================
+    // Drives the PCM5102A with 24-bit L/R samples.  valid_i is the
+    // combinationally-evaluated "data available" level (high when both
+    // DSP→I2S CDC FIFOs are non-empty); i2s_tx samples it on the LRCLK
+    // falling edge inside ST_IDLE.
     assign i2s_tx_valid = !i2s_tx_l_empty & !i2s_tx_r_empty;
 
     i2s_tx #(
         .DATA_W (I2S_DATA_W)
     ) u_i2s_tx (
-        .bclk_i      (i2s_bclk_i),
-        .lrclk_i     (i2s_lrclk_i),
+        .bclk_i      (i2s_bclk_o),
+        .lrclk_i     (i2s_lrclk_o),
         .sdata_o     (i2s_dac_data_o),
         .rst_n_i     (rst_i2s_n),
         .left_i      (i2s_tx_l_data),
@@ -313,14 +417,19 @@ module top import auris_pkg::*; #(
         .underflow_o (i2s_tx_underflow)
     );
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // I2S → DSP CDC (left and right channels)
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // 4-entry async FIFOs cross 24-bit audio samples from the 3.072 MHz
+    // BCLK domain (write side) into the 96 MHz DSP domain (read side).
+    // Because the I2S rate (48 kHz) is far slower than the DSP clock
+    // (96 MHz), the FIFOs stay at 0–1 entries — depth = 4 is more than
+    // enough headroom for any DSP-side scheduler jitter.
     cdc_i2s_to_dsp #(
         .WIDTH (I2S_DATA_W),
         .DEPTH (CDC_FIFO_DEPTH)
     ) u_cdc_i2s_l (
-        .wr_clk_i  (i2s_bclk_i),
+        .wr_clk_i  (i2s_bclk_o),
         .wr_rst_n_i(rst_i2s_n),
         .wr_en_i   (i2s_rx_valid),
         .wr_data_i (i2s_rx_l_data),
@@ -337,7 +446,7 @@ module top import auris_pkg::*; #(
         .WIDTH (I2S_DATA_W),
         .DEPTH (CDC_FIFO_DEPTH)
     ) u_cdc_i2s_r (
-        .wr_clk_i  (i2s_bclk_i),
+        .wr_clk_i  (i2s_bclk_o),
         .wr_rst_n_i(rst_i2s_n),
         .wr_en_i   (i2s_rx_valid),
         .wr_data_i (i2s_rx_r_data),
@@ -350,10 +459,10 @@ module top import auris_pkg::*; #(
         .wr_full_o ()
     );
 
-    // Pulse generator: 1-cycle dsp_sample_valid per "empty -> non-empty"
-    // transition.  Because the I2S rate (48 kHz) is far slower than the
-    // DSP clock (96 MHz) the FIFOs stay at 0–1 entries, so the rising
-    // edge fires exactly once per new I2S frame.
+    // 1-cycle dsp_sample_valid per "empty → non-empty" transition on
+    // either channel.  Because both FIFOs are written simultaneously
+    // (driven by the same i2s_rx_valid pulse), we only need to edge-detect
+    // cdc_l_empty — cdc_r_empty will transition on the same DSP clock.
     always_ff @(posedge clk_96mhz or negedge rst_dsp_n) begin
         if (!rst_dsp_n) begin
             cdc_l_empty_d <= 1'b1;
@@ -365,9 +474,9 @@ module top import auris_pkg::*; #(
     end
     assign dsp_sample_valid = !cdc_l_empty && cdc_l_empty_d;
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // DSP → I2S CDC (left and right channels)
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // The DSP pushes one L/R pair per dsp_out_valid_pulse; the I2S TX
     // pulls one L/R pair per LRCLK falling edge.  The CDC depth (4)
     // absorbs any short-term rate mismatch.
@@ -379,7 +488,7 @@ module top import auris_pkg::*; #(
         .wr_rst_n_i(rst_dsp_n),
         .wr_en_i   (dsp_out_valid_pulse),
         .wr_data_i (dsp_out_l),
-        .rd_clk_i  (i2s_bclk_i),
+        .rd_clk_i  (i2s_bclk_o),
         .rd_rst_n_i(rst_i2s_n),
         .rd_en_i   (i2s_lrclk_fall & !i2s_tx_l_empty),
         .rd_data_o (i2s_tx_l_data),
@@ -396,7 +505,7 @@ module top import auris_pkg::*; #(
         .wr_rst_n_i(rst_dsp_n),
         .wr_en_i   (dsp_out_valid_pulse),
         .wr_data_i (dsp_out_r),
-        .rd_clk_i  (i2s_bclk_i),
+        .rd_clk_i  (i2s_bclk_o),
         .rd_rst_n_i(rst_i2s_n),
         .rd_en_i   (i2s_lrclk_fall & !i2s_tx_r_empty),
         .rd_data_o (i2s_tx_r_data),
@@ -408,170 +517,56 @@ module top import auris_pkg::*; #(
     // Edge-detect dsp_out_valid to produce a single-cycle write strobe
     // for the CDC.  dsp_out_valid is the DSP pipeline's per-sample
     // valid; the rising edge corresponds to a new output sample.
-    // The dsp_out_valid_d register below drives the single-source
-    // continuous assignment above (line ~177).  No additional `assign`
-    // is permitted here — that would create a multi-driver.
     always_ff @(posedge clk_96mhz or negedge rst_dsp_n) begin
         if (!rst_dsp_n) dsp_out_valid_d <= 1'b0;
         else            dsp_out_valid_d <= dsp_out_valid;
     end
 
-    // -------------------------------------------------------------------------
-    // SPI slave
-    // -------------------------------------------------------------------------
-    spi_slave #(
-        .ADDR_W (7),
-        .DATA_W (24)
-    ) u_spi_slave (
-        .sclk_i        (spi_sclk_i),
-        .cs_n_i        (spi_cs_n_i),
-        .mosi_i        (spi_mosi_i),
-        .miso_o        (spi_miso_o),
-        .rst_n_i       (rst_spi_n),
-        .addr_o        (spi_addr),
-        .wdata_o       (spi_wdata),
-        .we_o          (spi_we),
-        .re_o          (spi_re),
-        .rdata_i       (spi_rdata),
-        .rdata_valid_i (spi_rdata_valid)
-    );
-
-    // -------------------------------------------------------------------------
-    // SPI → DSP CDC (handshake)
-    // -------------------------------------------------------------------------
-    cdc_spi_to_dsp #(
-        .ADDR_W (7),
-        .DATA_W (24)
-    ) u_cdc_spi_dsp (
-        .src_clk_i   (spi_sclk_i),
-        .src_rst_n_i (rst_spi_n),
-        .src_addr_i  (spi_addr),
-        .src_wdata_i (spi_wdata),
-        .src_we_i    (spi_we),
-        .src_re_i    (spi_re),
-        .src_ack_o   (),
-        .dst_clk_i   (clk_96mhz),
-        .dst_rst_n_i (rst_dsp_n),
-        .dst_addr_o  (cdc_dst_addr),
-        .dst_wdata_o (cdc_dst_wdata),
-        .dst_we_o    (cdc_dst_we),
-        .dst_re_o    (cdc_dst_re)
-    );
-
-    // -------------------------------------------------------------------------
-    // DSP → SPI CDC (read-data return)
-    // -------------------------------------------------------------------------
-    // Note: this CDC's outputs drive the spi_slave's rdata_i and
-    // rdata_valid_i.  The reg_file's rdata/rdata_valid outputs are
-    // wired into this CDC's source side.
-    cdc_dsp_to_spi #(
-        .DATA_W (24)
-    ) u_cdc_dsp_spi (
-        .src_clk_i   (clk_96mhz),
-        .src_rst_n_i (rst_dsp_n),
-        .src_rdata_i (spi_rdata_regfile),  // tied to reg_file below
-        .src_valid_i (spi_rdata_valid_regfile),
-        .dst_clk_i   (spi_sclk_i),
-        .dst_rst_n_i (rst_spi_n),
-        .dst_rdata_o (spi_rdata),
-        .dst_valid_o (spi_rdata_valid)
-    );
-
-    // -------------------------------------------------------------------------
-    // Register file
-    // -------------------------------------------------------------------------
-    // The reg_file's rdata and rdata_valid outputs feed the DSP→SPI CDC.
-    logic [23:0] spi_rdata_regfile;
-    logic        spi_rdata_valid_regfile;
-
-    reg_file #(
-        .ADDR_W (7),
-        .DATA_W (24)
-    ) u_reg_file (
-        .clk_i        (clk_96mhz),
-        .rst_n_i      (rst_dsp_n),
-        .addr_i       (cdc_dst_addr),
-        .wdata_i      (cdc_dst_wdata),
-        .we_i         (cdc_dst_we),
-        .re_i         (cdc_dst_re),
-        .rdata_o      (spi_rdata_regfile),
-        .rdata_valid_o(spi_rdata_valid_regfile),
-        // DSP-facing outputs:
-        .dsp_mode_o   (reg_dsp_mode),
-        .master_gain_o(reg_dsp_master_gain),
-        .noise_floor_o(reg_dsp_noise_floor),
-        .gate_ratio_o (reg_dsp_gate_ratio),
-        .gain_addr_o  (reg_dsp_gain_addr),
-        .gain_wdata_o (reg_dsp_gain_wdata),
-        .gain_we_o    (reg_dsp_gain_we),
-        .gain_bank_o  (reg_dsp_gain_bank_id),
-        .bank_commit_o(reg_dsp_bank_commit),
-        .dsp_enable_o (dsp_enable),           // -> dsp_pipeline.dsp_enable_i
-        // Read-only status inputs:
-        .peak_in_i    (dsp_peak_in),
-        .peak_out_i   (dsp_peak_out),
-        .frame_count_i(dsp_frame_count),
-        .error_flags_i(dsp_error_flags),
-        // Sticky clip-event indicator (REG_STATUS bit 2, STATUS_CLIP).
-        // Driven by status_mon's clip_latch so a slow-polling host can
-        // still see the latched event.
-        .clip_flag_i  (status_clip_latch),
-        .fw_version_i (FW_VERSION),
-        .hw_version_i (HW_VERSION),
-        // Live health signals for REG_STATUS bits 1:0.
-        .dsp_ready_i  (clk_dsp_locked & rst_dsp_n),
-        .cdc_locked_i (rst_dsp_n & rst_i2s_n & rst_spi_n),
-        // Read-side-effect: 1-cycle pulse on REG_STATUS read, clears the
-        // sticky clip latch via status_mon.clip_clear_i.
-        .clip_clear_o (clip_clear_pulse)
-    );
-
-    // -------------------------------------------------------------------------
-    // Mode controller (loads default gain tables on a mode change)
-    // -------------------------------------------------------------------------
-    // Edge-detect the mode register to generate a 1-cycle mode_we_pulse.
-    always_ff @(posedge clk_96mhz or negedge rst_dsp_n) begin
-        if (!rst_dsp_n) begin
-            reg_dsp_mode_d <= MODE_GENERAL;
-            mode_we_pulse  <= 1'b0;
-        end else begin
-            reg_dsp_mode_d <= reg_dsp_mode;
-            mode_we_pulse  <= (reg_dsp_mode != reg_dsp_mode_d);
-        end
-    end
-
+    // =========================================================================
+    // Mode controller (loads per-mode gain tables into spectral BRAM)
+    // =========================================================================
+    // On every mode_we_pulse, mode_ctrl streams 128 Q2.14 coefficients
+    // into the inactive bank of the spectral_proc gain BRAM via
+    // bank_we_o / bank_addr_o / bank_wdata_o / bank_sel_o, then pulses
+    // bank_commit_o to atomically swap banks (no glitch in audio).
+    //
+    // The default_*_o outputs are unused in the FPGA-only build: the
+    // DSP pipeline's master_gain / noise_floor / gate_ratio are tied to
+    // hardcoded defaults further down.  In a future revision with a host
+    // control plane, these outputs would drive the reg_file mirrors.
     mode_ctrl #(
         .N_BINS (GAIN_TABLE_DEPTH)
     ) u_mode_ctrl (
-        .clk_i               (clk_96mhz),
-        .rst_n_i             (rst_dsp_n),
-        .mode_i              (reg_dsp_mode),
-        .mode_we_i           (mode_we_pulse),
-        .bank_we_o           (mode_bank_we),
-        .bank_addr_o         (mode_bank_addr),
-        .bank_wdata_o        (mode_bank_wdata),
-        .bank_sel_o          (mode_bank_sel),
-        .bank_commit_o       (mode_bank_commit),
-        .default_master_gain_o (mode_default_master_gain),
-        .default_noise_floor_o (mode_default_noise_floor),
-        .default_gate_ratio_o  (mode_default_gate_ratio)
+        .clk_i                  (clk_96mhz),
+        .rst_n_i                (rst_dsp_n),
+        .mode_i                 (current_mode),
+        .mode_we_i              (mode_we_pulse),
+        .bank_we_o              (mode_bank_we),
+        .bank_addr_o            (mode_bank_addr),
+        .bank_wdata_o           (mode_bank_wdata),
+        .bank_sel_o             (mode_bank_sel),
+        .bank_commit_o          (mode_bank_commit),
+        .default_master_gain_o  (),
+        .default_noise_floor_o  (),
+        .default_gate_ratio_o   ()
     );
 
-    // -------------------------------------------------------------------------
-    // Mux between mode_ctrl's table-load and reg_file's per-bin write
-    // -------------------------------------------------------------------------
-    // mode_ctrl takes priority (it owns the inactive bank during a
-    // table load).  reg_file's per-bin write is used the rest of the
-    // time so the host can fine-tune individual bins.
-    wire        dsp_gain_we     = mode_bank_we     | reg_dsp_gain_we;
-    wire [6:0]  dsp_gain_addr   = mode_bank_we     ? mode_bank_addr      : reg_dsp_gain_addr;
-    wire [15:0] dsp_gain_wdata  = mode_bank_we     ? mode_bank_wdata     : reg_dsp_gain_wdata;
-    wire [1:0]  dsp_gain_bank   = mode_bank_we     ? mode_bank_sel       : reg_dsp_gain_bank_id;
-    wire        dsp_bank_commit = mode_bank_commit | reg_dsp_bank_commit;
-
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // DSP pipeline
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // Full spectral processing chain.  The gain-table ports are driven
+    // exclusively by mode_ctrl (which owns the inactive bank during a
+    // table load) — there is no reg_file per-bin write port in this build.
+    //
+    // Control inputs:
+    //   mode_i        — current 2-bit mode (drives spectral behaviour)
+    //   master_gain_i — 24-bit, set to unity (Q2.14 widened to 24 bits)
+    //   noise_floor_i — 24-bit, conservative fixed threshold (24'sd100)
+    //   gate_ratio_i  — 24-bit, unity (Q2.14 widened to 24 bits)
+    //   dsp_enable_i  — hardwired to 1'b1 (bypass is exercised at bring-up
+    //                   via the dedicated bypass path, not via a control bit)
+    //   volume_i      — 5-bit volume (0=mute, 31=unity), from the inline
+    //                   volume FSM above.
     dsp_pipeline #(
         .FFT_LEN (FFT_LEN)
     ) u_dsp_pipeline (
@@ -586,16 +581,18 @@ module top import auris_pkg::*; #(
         .out_r_o         (dsp_out_r),
         .out_valid_o     (dsp_out_valid),
         // Control
-        .mode_i          (reg_dsp_mode),
-        .master_gain_i   (reg_dsp_master_gain),
-        .noise_floor_i   (reg_dsp_noise_floor),
-        .gate_ratio_i    (reg_dsp_gate_ratio),
-        .dsp_enable_i    (dsp_enable),         // <-- from reg_file (REG_CONTROL[0])
-        .gain_addr_i     (dsp_gain_addr),
-        .gain_wdata_i    (dsp_gain_wdata),
-        .gain_we_i       (dsp_gain_we),
-        .gain_bank_i     (dsp_gain_bank),
-        .bank_commit_i   (dsp_bank_commit),
+        .mode_i          (current_mode),
+        .master_gain_i   ({8'sd0, UNITY_GAIN_Q14}),
+        .noise_floor_i   (24'sd100),
+        .gate_ratio_i    ({8'sd0, UNITY_GAIN_Q14}),
+        .dsp_enable_i    (1'b1),
+        .volume_i        (volume_level),
+        // Gain-table write interface (from mode_ctrl)
+        .gain_addr_i     (mode_bank_addr),
+        .gain_wdata_i    (mode_bank_wdata),
+        .gain_we_i       (mode_bank_we),
+        .gain_bank_i     (mode_bank_sel),
+        .bank_commit_i   (mode_bank_commit),
         // Telemetry
         .peak_in_o       (dsp_peak_in),
         .peak_out_o      (dsp_peak_out),
@@ -604,12 +601,14 @@ module top import auris_pkg::*; #(
         .clip_event_o    (dsp_clip_event)
     );
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // Status / heartbeat
-    // -------------------------------------------------------------------------
-    logic status_heartbeat;
-    logic status_clip_latch;
-
+    // =========================================================================
+    // status_mon generates a 1 Hz heartbeat when dsp_ready_i is asserted
+    // (MMCM locked AND DSP out of reset).  The clip-event latch is set
+    // whenever the DSP pipeline flags a sample clipping, and is cleared
+    // only by FPGA reset (clip_clear_i is tied to 0 in this build — there
+    // is no host that can clear it).
     status_mon #(
         .CLK_FREQ_HZ  (96_000_000),
         .HEARTBEAT_HZ (1)
@@ -618,9 +617,7 @@ module top import auris_pkg::*; #(
         .rst_n_i      (rst_dsp_n),
         .dsp_ready_i  (clk_dsp_locked & rst_dsp_n),
         .clip_event_i (dsp_clip_event),
-        // Cleared by a 1-cycle pulse from reg_file when the host reads
-        // REG_STATUS (the host polls then clears idiom for sticky flags).
-        .clip_clear_i (clip_clear_pulse),
+        .clip_clear_i (1'b0),
         .heartbeat_o  (status_heartbeat),
         .clip_latch_o (status_clip_latch)
     );
@@ -628,34 +625,33 @@ module top import auris_pkg::*; #(
     assign status_led_o  = status_heartbeat;
     assign status_clip_o = status_clip_latch;
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // RGB LED (mode-dependent, active-low drive)
-    // -------------------------------------------------------------------------
-    // General -> green     (R=1, G=0, B=1)
-    // Hearing -> blue      (R=1, G=1, B=0)
-    // Speech  -> cyan      (R=1, G=0, B=0)
-    // Bypass  -> red       (R=0, G=1, B=1)
+    // =========================================================================
+    // Arty S7-25 RGB LED is active-low: 1'b0 = ON, 1'b1 = OFF.
+    //
+    //   mode 0  → green     (R=1, G=0, B=1)   General
+    //   mode 1  → blue      (R=1, G=1, B=0)   Speech
+    //   mode 2  → magenta   (R=0, G=1, B=0)   Music
+    //   mode 3  → red       (R=0, G=1, B=1)   Hearing
     always_comb begin
-        led_rgb_r = 1'b1;
-        led_rgb_g = 1'b1;
-        led_rgb_b = 1'b1;
-        case (reg_dsp_mode)
-            MODE_GENERAL: begin
+        case (current_mode)
+            2'd0: begin
                 led_rgb_r = 1'b1;
                 led_rgb_g = 1'b0;
                 led_rgb_b = 1'b1;
             end
-            MODE_HEARING: begin
+            2'd1: begin
                 led_rgb_r = 1'b1;
                 led_rgb_g = 1'b1;
                 led_rgb_b = 1'b0;
             end
-            MODE_SPEECH: begin
-                led_rgb_r = 1'b1;
-                led_rgb_g = 1'b0;
+            2'd2: begin
+                led_rgb_r = 1'b0;
+                led_rgb_g = 1'b1;
                 led_rgb_b = 1'b0;
             end
-            MODE_BYPASS: begin
+            2'd3: begin
                 led_rgb_r = 1'b0;
                 led_rgb_g = 1'b1;
                 led_rgb_b = 1'b1;
@@ -668,9 +664,13 @@ module top import auris_pkg::*; #(
         endcase
     end
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // Synthesis-time configuration checks
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // The DSP pipeline and the gain BRAM table depth are both locked to
+    // FFT_LEN = 256.  A mismatch would silently mis-index the gain table
+    // and produce garbled audio with no compile-time warning — surface it
+    // loudly at elaboration.
     initial begin
         if (FFT_LEN != 256) begin
             $display("ERROR: top FFT_LEN=%0d, expected 256", FFT_LEN);

@@ -19,10 +19,10 @@ set script_dir [file normalize [file dirname [info script]]]
 set rtl_dir    [file normalize "${script_dir}/../rtl"]
 set sim_dir    [file normalize "${script_dir}/../sim"]
 set sim_tb_dir [file join $sim_dir testbenches]
-set work_dir   [file normalize "${script_dir}/../vivado_workspace/sim_i2s_rx"]
+set work_dir   [file normalize "${script_dir}/../vivado_proj/sim_i2s_rx"]
 
 set proj_name  "sim_i2s_rx"
-set part       "XC7S25-1CSGA225C"
+set part       "xc7s25csga324-1"
 
 puts "============================================================"
 puts "  Sim: $proj_name"
@@ -43,12 +43,11 @@ set_property simulator_language Mixed   [current_project]
 
 # ---------------------------------------------------------------------------
 # 2. Add sources
-#    2a. RTL: the I2S RX testbench only needs auris_pkg and i2s_rx.
-#        We still glob the full RTL tree so the compile order is
-#        deterministic and so adding new dependencies is a no-op.
+#    2a. Full RTL tree — Vivado's add_files recurses natively
+#        when given a directory path.
 #    2b. Testbench.
 # ---------------------------------------------------------------------------
-add_files -fileset sources_1 [glob -directory $rtl_dir **/*.sv]
+add_files -fileset sources_1 $rtl_dir
 add_files -fileset sim_1     [glob -directory $sim_tb_dir tb_i2s_rx.sv]
 
 # ---------------------------------------------------------------------------
@@ -64,7 +63,7 @@ update_compile_order -fileset sim_1
 # 4. Launch and run
 # ---------------------------------------------------------------------------
 puts "Launching xsim ..."
-launch_simulation -simulator xsim
+launch_simulation
 
 # 1 ms is enough to exercise many LRCLK frames at 48 kHz while keeping
 # the wall-clock cost of the run in single-digit seconds.

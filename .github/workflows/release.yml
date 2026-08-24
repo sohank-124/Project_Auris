@@ -3,19 +3,20 @@
 # ----------------------------------------------------------------------------
 # Triggered by pushing a tag of the form v* (e.g. v0.1.0, v1.2.3-rc1).
 #
-# Pipeline:
+# Pipeline (post-FPGA-only migration, 2026-08):
 #   1. checkout full history
-#   2. build ESP32 firmware  (idempotent — produces .bin + .elf)
-#   3. run Python generators (Hann window, default gain tables)
-#   4. collect release artifacts:
-#        - firmware .bin + .elf
+#   2. run Python generators (Hann window, default gain tables)
+#   3. collect release artifacts:
 #        - generated .hex / .coe tables
 #        - hardware/bom.csv
 #        - LICENSE
 #        - CHANGELOG.md
 #        packaged into a single tar.gz
-#   5. create / update the GitHub release via softprops/action-gh-release@v2
+#   4. create / update the GitHub release via softprops/action-gh-release@v2
 #      with auto-generated release notes.
+#
+# Note: ESP32 firmware build steps were removed in Phase 5. The FPGA bitstream
+# is the sole programmable artifact for the hardware platform.
 # ============================================================================
 
 name: Release
@@ -36,7 +37,7 @@ permissions:
 
 env:
   PYTHON_VERSION: "3.11"
-  IDF_VERSION: "v5.2.2"
+  # IDF_VERSION removed in Phase 5 (FPGA-only migration, 2026-08)
   ARTIFACT_DIR: auris-release-artifacts
 
 jobs:
@@ -61,23 +62,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       # ------------------------------------------------------------------
-      # 1) Build ESP32 firmware
-      # ------------------------------------------------------------------
-      - name: Build ESP32 firmware
-        uses: espressif/esp-idf-ci-action@v1
-        with:
-          esp_idf_version: ${{ env.IDF_VERSION }}
-          target: esp32
-          path: firmware
-
-      - name: idf.py build
-        working-directory: firmware
-        run: |
-          set -euo pipefail
-          idf.py build
-
-      # ------------------------------------------------------------------
-      # 2) Generate coefficient / table artifacts
+      # 1) Generate coefficient / table artifacts
       # ------------------------------------------------------------------
       - name: Generate Hann window coefficients
         run: |
@@ -91,21 +76,13 @@ jobs:
           python tools/profile_gen/gen_default_tables.py
 
       # ------------------------------------------------------------------
-      # 3) Collect & package release artifacts
+      # 2) Collect & package release artifacts
       # ------------------------------------------------------------------
       - name: Stage release artifacts
         run: |
           set -euo pipefail
           rm -rf "${{ env.ARTIFACT_DIR }}"
-          mkdir -p "${{ env.ARTIFACT_DIR }}/firmware"
           mkdir -p "${{ env.ARTIFACT_DIR }}/generated"
-
-          # Firmware binaries (built by idf.py)
-          cp -v firmware/build/*.bin      "${{ env.ARTIFACT_DIR }}/firmware/" 2>/dev/null || true
-          cp -v firmware/build/*.elf      "${{ env.ARTIFACT_DIR }}/firmware/" 2>/dev/null || true
-          cp -v firmware/build/bootloader/bootloader.bin        "${{ env.ARTIFACT_DIR }}/firmware/" 2>/dev/null || true
-          cp -v firmware/build/partition_table/partition-table.bin "${{ env.ARTIFACT_DIR }}/firmware/" 2>/dev/null || true
-          cp -v firmware/build/flasher_args.json                "${{ env.ARTIFACT_DIR }}/firmware/" 2>/dev/null || true
 
           # Generated tables (created in step 2)
           cp -v fpga/generated/*.hex "${{ env.ARTIFACT_DIR }}/generated/" 2>/dev/null || true
@@ -125,11 +102,9 @@ jobs:
           # Drop a short README into the tarball so the contents are obvious.
           cat > "${{ env.ARTIFACT_DIR }}/README.txt" <<EOF
 Project Auris release artifacts
-================================
+===============================
 
 Contents:
-  firmware/         ESP32 DevKit v1 binaries (bootloader, partition table,
-                    application .bin + .elf, flasher_args.json)
   generated/        Generated coefficient & gain tables (Hann window, default
                     gain profiles) for FPGA ROM initialisation
   bom.csv           Hardware bill of materials
@@ -159,7 +134,7 @@ EOF
           retention-days: 30
 
       # ------------------------------------------------------------------
-      # 4) Create / update the GitHub release
+      # 3) Create / update the GitHub release
       # ------------------------------------------------------------------
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -177,9 +152,6 @@ EOF
           # addition to the tarball. Order matters only cosmetically.
           files: |
             ${{ env.TARBALL }}
-            ${{ env.ARTIFACT_DIR }}/firmware/*.bin
-            ${{ env.ARTIFACT_DIR }}/firmware/*.elf
-            ${{ env.ARTIFACT_DIR }}/firmware/flasher_args.json
             ${{ env.ARTIFACT_DIR }}/generated/*.hex
             ${{ env.ARTIFACT_DIR }}/generated/*.coe
             ${{ env.ARTIFACT_DIR }}/bom.csv
@@ -192,24 +164,11 @@ EOF
             summary of what changed, and the auto-generated notes below
             for the full list of merged PRs.
 
-            ### Flashing the ESP32
-
-            ```bash
-            esptool.py --chip esp32 \
-              --port /dev/ttyUSB0 \
-              --baud 460800 \
-              write_flash \
-              0x1000 firmware/bootloader.bin \
-              0x8000 firmware/partition-table.bin \
-              0x10000 firmware/<application>.bin
-            ```
-
-            (The exact application binary name appears in `firmware/`.)
-
             ### Programming the FPGA
 
             Use the `.coe` / `.hex` files in `generated/` as BRAM
-            initialisation data inside Vivado.
+            initialisation data inside Vivado, and follow the bitstream
+            build steps in `README.md` to produce the final `.bit`.
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

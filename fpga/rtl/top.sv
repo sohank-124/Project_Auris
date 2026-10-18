@@ -48,7 +48,7 @@
 //              Indicators:
 //                STATUS0 (status_led_o)  — 1 Hz heartbeat when the FPGA is
 //                                           healthy and out of reset.
-//                STATUS1 (status_clip_o) — sticky clip-event indicator;
+//                STATUS2 (status_clip_o) — sticky clip-event indicator;
 //                                           cleared on FPGA reset only.
 //                RGB LED                 — mode-dependent colour, active-low
 //                                           drive on the Arty S7-25:
@@ -69,7 +69,10 @@
 `timescale 1ns / 1ps
 
 module top import auris_pkg::*; #(
-    parameter int unsigned FFT_LEN = auris_pkg::FFT_LEN
+    parameter int unsigned FFT_LEN = auris_pkg::FFT_LEN,
+    parameter bit          SELF_TEST_ENABLE = 1'b0,
+    parameter bit          SELF_TEST_LOOPBACK_ENABLE = 1'b0,
+    parameter int unsigned SELF_TEST_PASS_BITS = 24'd131072
 ) (
     // -----------------------------------------------------------------------
     // Power / programming
@@ -97,10 +100,10 @@ module top import auris_pkg::*; #(
     // -----------------------------------------------------------------------
     // Onboard status LEDs
     //   STATUS0: 1 Hz heartbeat (FPGA healthy when toggling)
-    //   STATUS1: sticky clip-event indicator
+    //   STATUS2: sticky clip-event indicator
     // -----------------------------------------------------------------------
     output wire        status_led_o,       // STATUS0: heartbeat
-    output wire        status_clip_o,      // STATUS1: clip indicator
+    output wire        status_clip_o,      // STATUS2: clip indicator
 
     // -----------------------------------------------------------------------
     // Onboard RGB LED (active low on Arty S7-25)
@@ -171,6 +174,9 @@ module top import auris_pkg::*; #(
     logic [15:0] mode_bank_wdata;
     logic [1:0]  mode_bank_sel;
     logic        mode_bank_commit;
+    logic [23:0] mode_master_gain;
+    logic [23:0] mode_noise_floor;
+    logic [23:0] mode_gate_ratio;
 
     // -------------------------------------------------------------------------
     // Local nets — DSP telemetry
@@ -191,6 +197,9 @@ module top import auris_pkg::*; #(
     logic [I2S_DATA_W-1:0] dsp_sample_l;
     logic [I2S_DATA_W-1:0] dsp_sample_r;
     logic                  dsp_sample_valid;
+    logic [I2S_DATA_W-1:0] dsp_in_l;
+    logic [I2S_DATA_W-1:0] dsp_in_r;
+    logic                  dsp_in_valid;
     logic                  cdc_l_empty;
     logic                  cdc_r_empty;
     logic                  cdc_l_empty_d;
@@ -214,8 +223,8 @@ module top import auris_pkg::*; #(
     logic [23:0] dsp_out_l;
     logic [23:0] dsp_out_r;
     logic        dsp_out_valid;
-    logic        dsp_out_valid_d;
-    wire         dsp_out_valid_pulse = dsp_out_valid & ~dsp_out_valid_d;
+    logic        i2s_tx_l_full;
+    logic        i2s_tx_r_full;
 
     // -------------------------------------------------------------------------
     // Local nets — LRCLK synchroniser (BCLK domain)
@@ -236,6 +245,29 @@ module top import auris_pkg::*; #(
     // -------------------------------------------------------------------------
     logic status_heartbeat;
     logic status_clip_latch;
+
+    // -------------------------------------------------------------------------
+    // Local nets — self-test stimulus / loopback checker
+    // -------------------------------------------------------------------------
+    logic [I2S_DATA_W-1:0] selftest_l;
+    logic [I2S_DATA_W-1:0] selftest_r;
+    logic                  selftest_valid;
+    logic                  selftest_loop_pass;
+    logic                  selftest_loop_fail;
+    logic                  selftest_led_phase;
+    logic [23:0]           selftest_total_bits;
+    logic [23:0]           selftest_error_bits;
+    logic [25:0]           selftest_led_div;
+    logic [1:0]            selftest_mode;
+    logic [31:0]           noise_env_accum;
+    logic [23:0]           adaptive_noise_floor;
+    logic [23:0]           adaptive_noise_floor_next;
+    logic [23:0]           dsp_noise_floor_ctrl;
+
+    function automatic logic [23:0] abs24(input logic [23:0] x);
+        if (x[23]) abs24 = ~x + 24'd1;
+        else       abs24 = x;
+    endfunction
 
     // =========================================================================
     // Clock generation
@@ -475,9 +507,23 @@ module top import auris_pkg::*; #(
     assign dsp_sample_valid = !cdc_l_empty && cdc_l_empty_d;
 
     // =========================================================================
+    // Self-test stimulus mux (compile-time gated)
+    // =========================================================================
+    // When SELF_TEST_ENABLE=1, the DSP chain is driven from an internal
+    // deterministic 48 kHz source instead of the I2S RX CDC path.
+    // This allows board bring-up without external microphone hardware.
+    assign dsp_in_l     = SELF_TEST_ENABLE ? selftest_l     : dsp_sample_l;
+    assign dsp_in_r     = SELF_TEST_ENABLE ? selftest_r     : dsp_sample_r;
+    assign dsp_in_valid = SELF_TEST_ENABLE ? selftest_valid : dsp_sample_valid;
+
+    // Loopback bring-up should use a high-entropy pattern so a quiet or
+    // pulled-down RX line cannot accidentally look like a valid pass.
+    assign selftest_mode = (SELF_TEST_ENABLE && SELF_TEST_LOOPBACK_ENABLE) ? 2'd3 : current_mode;
+
+    // =========================================================================
     // DSP → I2S CDC (left and right channels)
     // =========================================================================
-    // The DSP pushes one L/R pair per dsp_out_valid_pulse; the I2S TX
+    // The DSP pushes one L/R pair per dsp_out_valid sample; the I2S TX
     // pulls one L/R pair per LRCLK falling edge.  The CDC depth (4)
     // absorbs any short-term rate mismatch.
     cdc_dsp_to_i2s #(
@@ -486,7 +532,7 @@ module top import auris_pkg::*; #(
     ) u_cdc_o2i_l (
         .wr_clk_i  (clk_96mhz),
         .wr_rst_n_i(rst_dsp_n),
-        .wr_en_i   (dsp_out_valid_pulse),
+        .wr_en_i   (dsp_out_valid && !i2s_tx_l_full && !i2s_tx_r_full),
         .wr_data_i (dsp_out_l),
         .rd_clk_i  (i2s_bclk_o),
         .rd_rst_n_i(rst_i2s_n),
@@ -494,7 +540,7 @@ module top import auris_pkg::*; #(
         .rd_data_o (i2s_tx_l_data),
         .rd_valid_o(),
         .rd_empty_o(i2s_tx_l_empty),
-        .wr_full_o ()
+        .wr_full_o (i2s_tx_l_full)
     );
 
     cdc_dsp_to_i2s #(
@@ -503,7 +549,7 @@ module top import auris_pkg::*; #(
     ) u_cdc_o2i_r (
         .wr_clk_i  (clk_96mhz),
         .wr_rst_n_i(rst_dsp_n),
-        .wr_en_i   (dsp_out_valid_pulse),
+        .wr_en_i   (dsp_out_valid && !i2s_tx_l_full && !i2s_tx_r_full),
         .wr_data_i (dsp_out_r),
         .rd_clk_i  (i2s_bclk_o),
         .rd_rst_n_i(rst_i2s_n),
@@ -511,16 +557,69 @@ module top import auris_pkg::*; #(
         .rd_data_o (i2s_tx_r_data),
         .rd_valid_o(),
         .rd_empty_o(i2s_tx_r_empty),
-        .wr_full_o ()
+        .wr_full_o (i2s_tx_r_full)
     );
 
-    // Edge-detect dsp_out_valid to produce a single-cycle write strobe
-    // for the CDC.  dsp_out_valid is the DSP pipeline's per-sample
-    // valid; the rising edge corresponds to a new output sample.
-    always_ff @(posedge clk_96mhz or negedge rst_dsp_n) begin
-        if (!rst_dsp_n) dsp_out_valid_d <= 1'b0;
-        else            dsp_out_valid_d <= dsp_out_valid;
-    end
+    // =========================================================================
+    // Optional I2S bit-level loopback checker (compile-time gated)
+    // =========================================================================
+    // Intended for JA7->JA6 jumper verification when codecs are not attached.
+    // The checker counts bit mismatches between TX SD and RX SD in the BCLK
+    // domain and raises a sticky fail if mismatches occur after lock.
+    // Pass/fail evaluation is gated until real TX activity is proven by seeing
+    // both logic levels on i2s_dac_data_o, which avoids false-pass when the
+    // line is still quiet during startup.
+    // This validates digital continuity and I/O timing margin at the pad level.
+    generate
+        if (SELF_TEST_ENABLE && SELF_TEST_LOOPBACK_ENABLE) begin : g_selftest_loop
+            logic [11:0] loop_warmup_ctr;
+            logic        tx_seen_zero;
+            logic        tx_seen_one;
+            logic        rx_nonzero_seen;
+            wire         tx_activity_seen = tx_seen_zero & tx_seen_one;
+
+            always_ff @(posedge i2s_bclk_o or negedge rst_i2s_n) begin
+                if (!rst_i2s_n) begin
+                    loop_warmup_ctr     <= 12'd0;
+                    tx_seen_zero        <= 1'b0;
+                    tx_seen_one         <= 1'b0;
+                    rx_nonzero_seen     <= 1'b0;
+                    selftest_total_bits <= 24'd0;
+                    selftest_error_bits <= 24'd0;
+                    selftest_loop_pass  <= 1'b0;
+                    selftest_loop_fail  <= 1'b0;
+                end else begin
+                    if (loop_warmup_ctr != 12'd4095)
+                        loop_warmup_ctr <= loop_warmup_ctr + 12'd1;
+
+                    if (i2s_dac_data_o) tx_seen_one  <= 1'b1;
+                    else                tx_seen_zero <= 1'b1;
+
+                    if (i2s_rx_valid && ((i2s_rx_l_data != '0) || (i2s_rx_r_data != '0)))
+                        rx_nonzero_seen <= 1'b1;
+
+                    if (loop_warmup_ctr == 12'd4095 && !selftest_loop_fail) begin
+                        if (tx_activity_seen && rx_nonzero_seen) begin
+                            selftest_total_bits <= selftest_total_bits + 24'd1;
+                            if (i2s_adc_data_i != i2s_dac_data_o) begin
+                                selftest_error_bits <= selftest_error_bits + 24'd1;
+                                selftest_loop_fail  <= 1'b1;
+                            end else if (selftest_total_bits >= SELF_TEST_PASS_BITS) begin
+                                selftest_loop_pass <= 1'b1;
+                            end
+                        end
+                    end
+                end
+            end
+        end else begin : g_no_selftest_loop
+            always_comb begin
+                selftest_total_bits = 24'd0;
+                selftest_error_bits = 24'd0;
+                selftest_loop_pass  = 1'b0;
+                selftest_loop_fail  = 1'b0;
+            end
+        end
+    endgenerate
 
     // =========================================================================
     // Mode controller (loads per-mode gain tables into spectral BRAM)
@@ -530,10 +629,7 @@ module top import auris_pkg::*; #(
     // bank_we_o / bank_addr_o / bank_wdata_o / bank_sel_o, then pulses
     // bank_commit_o to atomically swap banks (no glitch in audio).
     //
-    // The default_*_o outputs are unused in the FPGA-only build: the
-    // DSP pipeline's master_gain / noise_floor / gate_ratio are tied to
-    // hardcoded defaults further down.  In a future revision with a host
-    // control plane, these outputs would drive the reg_file mirrors.
+    // default_*_o drive mode-dependent scalar controls in the FPGA-only build.
     mode_ctrl #(
         .N_BINS (GAIN_TABLE_DEPTH)
     ) u_mode_ctrl (
@@ -546,10 +642,46 @@ module top import auris_pkg::*; #(
         .bank_wdata_o           (mode_bank_wdata),
         .bank_sel_o             (mode_bank_sel),
         .bank_commit_o          (mode_bank_commit),
-        .default_master_gain_o  (),
-        .default_noise_floor_o  (),
-        .default_gate_ratio_o   ()
+        .default_master_gain_o  (mode_master_gain),
+        .default_noise_floor_o  (mode_noise_floor),
+        .default_gate_ratio_o   (mode_gate_ratio)
     );
+
+    // -------------------------------------------------------------------------
+    // Lightweight adaptive noise-floor tracker (DSP domain)
+    // -------------------------------------------------------------------------
+    // Tracks average input magnitude using a leaky accumulator updated at
+    // sample rate. The derived floor is clamped and OR'd with the mode floor.
+    always_ff @(posedge clk_96mhz or negedge rst_dsp_n) begin
+        if (!rst_dsp_n) begin
+            noise_env_accum      <= 32'd0;
+            adaptive_noise_floor <= 24'd1024;
+        end else if (dsp_in_valid) begin
+            noise_env_accum      <= noise_env_accum - (noise_env_accum >> 6) + {8'd0, abs24(dsp_in_l)};
+            adaptive_noise_floor <= adaptive_noise_floor_next;
+        end
+    end
+
+    always_comb begin
+        logic [23:0] avg_abs;
+        logic [15:0] avg_sample_mag;
+        logic [31:0] noise_power;
+        avg_abs        = noise_env_accum[31:6];
+        avg_sample_mag = avg_abs[23:8];
+        noise_power    = avg_sample_mag * avg_sample_mag;
+
+        if (noise_power[31:8] < 24'd1024)
+            adaptive_noise_floor_next = 24'd1024;
+        else if (noise_power[31:8] > 24'd65535)
+            adaptive_noise_floor_next = 24'd65535;
+        else
+            adaptive_noise_floor_next = noise_power[31:8];
+
+        if (adaptive_noise_floor[15:0] > mode_noise_floor[15:0])
+            dsp_noise_floor_ctrl = adaptive_noise_floor;
+        else
+            dsp_noise_floor_ctrl = mode_noise_floor;
+    end
 
     // =========================================================================
     // DSP pipeline
@@ -560,9 +692,9 @@ module top import auris_pkg::*; #(
     //
     // Control inputs:
     //   mode_i        — current 2-bit mode (drives spectral behaviour)
-    //   master_gain_i — 24-bit, set to unity (Q2.14 widened to 24 bits)
-    //   noise_floor_i — 24-bit, conservative fixed threshold (24'sd100)
-    //   gate_ratio_i  — 24-bit, unity (Q2.14 widened to 24 bits)
+    //   master_gain_i — mode-dependent scalar from mode_ctrl
+    //   noise_floor_i — mode floor combined with adaptive ambient tracker
+    //   gate_ratio_i  — mode-dependent scalar from mode_ctrl
     //   dsp_enable_i  — hardwired to 1'b1 (bypass is exercised at bring-up
     //                   via the dedicated bypass path, not via a control bit)
     //   volume_i      — 5-bit volume (0=mute, 31=unity), from the inline
@@ -573,18 +705,18 @@ module top import auris_pkg::*; #(
         .clk_i           (clk_96mhz),
         .rst_n_i         (rst_dsp_n),
         // From I2S RX (post-CDC, 48 kHz strobe)
-        .sample_l_i      (dsp_sample_l),
-        .sample_r_i      (dsp_sample_r),
-        .sample_valid_i  (dsp_sample_valid),
+        .sample_l_i      (dsp_in_l),
+        .sample_r_i      (dsp_in_r),
+        .sample_valid_i  (dsp_in_valid),
         // To I2S TX
         .out_l_o         (dsp_out_l),
         .out_r_o         (dsp_out_r),
         .out_valid_o     (dsp_out_valid),
         // Control
         .mode_i          (current_mode),
-        .master_gain_i   ({8'sd0, UNITY_GAIN_Q14}),
-        .noise_floor_i   (24'sd100),
-        .gate_ratio_i    ({8'sd0, UNITY_GAIN_Q14}),
+        .master_gain_i   (mode_master_gain),
+        .noise_floor_i   (dsp_noise_floor_ctrl),
+        .gate_ratio_i    (mode_gate_ratio),
         .dsp_enable_i    (1'b1),
         .volume_i        (volume_level),
         // Gain-table write interface (from mode_ctrl)
@@ -599,6 +731,23 @@ module top import auris_pkg::*; #(
         .frame_count_o   (dsp_frame_count),
         .error_flags_o   (dsp_error_flags),
         .clip_event_o    (dsp_clip_event)
+    );
+
+    // =========================================================================
+    // Internal deterministic stimulus source (DSP domain)
+    // =========================================================================
+    selftest_stimulus #(
+        .CLK_HZ      (96_000_000),
+        .SAMPLE_HZ   (48_000),
+        .SAMPLE_W    (I2S_DATA_W)
+    ) u_selftest_stimulus (
+        .clk_i       (clk_96mhz),
+        .rst_n_i     (rst_dsp_n),
+        .enable_i    (SELF_TEST_ENABLE),
+        .mode_i      (selftest_mode),
+        .sample_l_o  (selftest_l),
+        .sample_r_o  (selftest_r),
+        .sample_v_o  (selftest_valid)
     );
 
     // =========================================================================
@@ -623,7 +772,20 @@ module top import auris_pkg::*; #(
     );
 
     assign status_led_o  = status_heartbeat;
-    assign status_clip_o = status_clip_latch;
+    assign status_clip_o = status_clip_latch | selftest_loop_fail;
+
+    // Blink helper used only for self-test LED overlays (~0.7 Hz at 96 MHz).
+    always_ff @(posedge clk_96mhz or negedge rst_dsp_n) begin
+        if (!rst_dsp_n) begin
+            selftest_led_div   <= 26'd0;
+            selftest_led_phase <= 1'b0;
+        end else if (selftest_led_div == 26'd67_000_000) begin
+            selftest_led_div   <= 26'd0;
+            selftest_led_phase <= ~selftest_led_phase;
+        end else begin
+            selftest_led_div <= selftest_led_div + 26'd1;
+        end
+    end
 
     // =========================================================================
     // RGB LED (mode-dependent, active-low drive)
@@ -635,33 +797,52 @@ module top import auris_pkg::*; #(
     //   mode 2  → magenta   (R=0, G=1, B=0)   Music
     //   mode 3  → red       (R=0, G=1, B=1)   Hearing
     always_comb begin
-        case (current_mode)
-            2'd0: begin
+        if (SELF_TEST_ENABLE && SELF_TEST_LOOPBACK_ENABLE) begin
+            if (selftest_loop_fail) begin
+                // Red = loopback mismatch detected.
+                led_rgb_r = 1'b0;
+                led_rgb_g = 1'b1;
+                led_rgb_b = 1'b1;
+            end else if (selftest_loop_pass) begin
+                // Cyan = sustained no-error loopback.
                 led_rgb_r = 1'b1;
                 led_rgb_g = 1'b0;
-                led_rgb_b = 1'b1;
-            end
-            2'd1: begin
-                led_rgb_r = 1'b1;
-                led_rgb_g = 1'b1;
                 led_rgb_b = 1'b0;
-            end
-            2'd2: begin
-                led_rgb_r = 1'b0;
-                led_rgb_g = 1'b1;
-                led_rgb_b = 1'b0;
-            end
-            2'd3: begin
-                led_rgb_r = 1'b0;
-                led_rgb_g = 1'b1;
+            end else begin
+                // Yellow (blinking) = checker warming up / accumulating.
+                led_rgb_r = selftest_led_phase;
+                led_rgb_g = selftest_led_phase;
                 led_rgb_b = 1'b1;
             end
-            default: begin
-                led_rgb_r = 1'b1;
-                led_rgb_g = 1'b1;
-                led_rgb_b = 1'b1;
-            end
-        endcase
+        end else begin
+            case (current_mode)
+                2'd0: begin
+                    led_rgb_r = 1'b1;
+                    led_rgb_g = 1'b0;
+                    led_rgb_b = 1'b1;
+                end
+                2'd1: begin
+                    led_rgb_r = 1'b1;
+                    led_rgb_g = 1'b1;
+                    led_rgb_b = 1'b0;
+                end
+                2'd2: begin
+                    led_rgb_r = 1'b0;
+                    led_rgb_g = 1'b1;
+                    led_rgb_b = 1'b0;
+                end
+                2'd3: begin
+                    led_rgb_r = 1'b0;
+                    led_rgb_g = 1'b1;
+                    led_rgb_b = 1'b1;
+                end
+                default: begin
+                    led_rgb_r = 1'b1;
+                    led_rgb_g = 1'b1;
+                    led_rgb_b = 1'b1;
+                end
+            endcase
+        end
     end
 
     // =========================================================================

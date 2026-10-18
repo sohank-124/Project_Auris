@@ -130,10 +130,12 @@ module tb_mode_ctrl;
             fail_count++;
         end
 
-        // Check that default outputs match the mode
+        // Check that committed scalar outputs match the active mode.
         case (mode)
             MODE_GENERAL: begin
-                if (default_master_gain !== 24'sd16384) begin
+                if (default_master_gain !== 24'd16384 ||
+                    default_noise_floor !== 24'd4096 ||
+                    default_gate_ratio !== 24'd12288) begin
                     $display("[FAIL] %s-Defaults: master=%0d noise=%0d gate=%0d",
                              test_name, default_master_gain, default_noise_floor, default_gate_ratio);
                     fail_count++; total_count++;
@@ -144,8 +146,11 @@ module tb_mode_ctrl;
                 end
             end
             MODE_HEARING: begin
-                if (default_master_gain !== 24'sd16384) begin
-                    $display("[FAIL] %s-Defaults: master=%0d (expected 16384)", test_name, default_master_gain);
+                if (default_master_gain !== 24'd18022 ||
+                    default_noise_floor !== 24'd32768 ||
+                    default_gate_ratio !== 24'd9011) begin
+                    $display("[FAIL] %s-Defaults: master=%0d noise=%0d gate=%0d",
+                             test_name, default_master_gain, default_noise_floor, default_gate_ratio);
                     fail_count++; total_count++;
                 end else begin
                     $display("[PASS] %s-Defaults: master=%0d noise=%0d gate=%0d",
@@ -154,8 +159,11 @@ module tb_mode_ctrl;
                 end
             end
             MODE_SPEECH: begin
-                if (default_master_gain !== 24'sd16384) begin
-                    $display("[FAIL] %s-Defaults: master=%0d (expected 16384 (unity gain))", test_name, default_master_gain);
+                if (default_master_gain !== 24'd17203 ||
+                    default_noise_floor !== 24'd16384 ||
+                    default_gate_ratio !== 24'd9830) begin
+                    $display("[FAIL] %s-Defaults: master=%0d noise=%0d gate=%0d",
+                             test_name, default_master_gain, default_noise_floor, default_gate_ratio);
                     fail_count++; total_count++;
                 end else begin
                     $display("[PASS] %s-Defaults: master=%0d noise=%0d gate=%0d",
@@ -164,8 +172,11 @@ module tb_mode_ctrl;
                 end
             end
             MODE_MUSIC: begin
-                if (default_master_gain !== 24'sd16384) begin
-                    $display("[FAIL] %s-Defaults: master=%0d (expected 16384 (unity gain))", test_name, default_master_gain);
+                if (default_master_gain !== 24'd16384 ||
+                    default_noise_floor !== 24'd2048 ||
+                    default_gate_ratio !== 24'd13926) begin
+                    $display("[FAIL] %s-Defaults: master=%0d noise=%0d gate=%0d",
+                             test_name, default_master_gain, default_noise_floor, default_gate_ratio);
                     fail_count++; total_count++;
                 end else begin
                     $display("[PASS] %s-Defaults: master=%0d noise=%0d gate=%0d",

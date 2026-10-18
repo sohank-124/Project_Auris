@@ -44,6 +44,11 @@ set_property -dict { PACKAGE_PIN F14   IOSTANDARD LVCMOS33 } [get_ports clk_12mh
 #      JA[6] = ADC_DATA   (input, INMP441 drives)
 #      JA[7] = DAC_DATA   (output, FPGA drives PCM5102A)
 #
+#    Physical holes on the 2x6 JA header (wiring docs use these numbers):
+#      JA[4]/BCLK = hole 7, JA[5]/LRCLK = hole 8,
+#      JA[6]/ADC  = hole 9, JA[7]/DAC   = hole 10.
+#    Holes 5/11 = GND, 6/12 = 3V3, holes 1-4 unused. See WIRING.md step 1.
+#
 #    Note on signal direction: BCLK and LRCLK were previously inputs because
 #    the ESP32 was the I2S master.  In the FPGA-only architecture the FPGA
 #    generates both clocks on-board (see clk_gen.sv) and now drives them
@@ -64,8 +69,8 @@ set_property -dict { PACKAGE_PIN E13   IOSTANDARD LVCMOS33 } [get_ports status_c
 
 # ---------------------------------------------------------------------------
 # 4. Onboard RGB LED 0 (active-low, Bank 15)
-#    Mode-dependent colour: General=green, Hearing=blue, Speech=cyan,
-#    Bypass=red.
+#    Mode-dependent colour: General=green, Speech=blue, Music=magenta,
+#    Hearing=red. Self-test uses yellow/cyan/red status overlays.
 # ---------------------------------------------------------------------------
 set_property -dict { PACKAGE_PIN J15   IOSTANDARD LVCMOS33 } [get_ports led_rgb_r];       # RGB0-R
 set_property -dict { PACKAGE_PIN G17   IOSTANDARD LVCMOS33 } [get_ports led_rgb_g];       # RGB0-G

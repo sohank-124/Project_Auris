@@ -15,9 +15,8 @@
 //              Data  : LEFT  = 24 bits MSB-first on BCLK rising edges 2..25
 //                              after the LRCLK fall (edge 1 is the ST_WAIT
 //                              dummy cycle).
-//                      RIGHT = 24 bits MSB-first on BCLK rising edges 26..49,
-//                              i.e. immediately after the left LSB with NO
-//                              dummy cycle -- see send_i2s_frame for why.
+//                      RIGHT = 24 bits MSB-first after the LRCLK rise,
+//                              following the channel padding interval.
 //                      15 trailing don't-care bits pad the frame to 64 BCLK.
 //
 //              Run from Vivado:
@@ -122,24 +121,8 @@ module tb_i2s_rx;
         end
 
         // ---- Start of RIGHT channel ---------------------------------------
-        // !!! This RTL is NOT Philips-I2S-compliant for the right channel !!!
-        //
-        // After the LEFT channel's 24th bit (rising edge 25), the FSM enters
-        // ST_SHIFT_RIGHT and samples sdata_i on the very NEXT rising edge
-        // (edge 26). There is no ST_WAIT dummy cycle and no wait for
-        // lrclk_rise. The lrclk_rise inside ST_SHIFT_RIGHT is only used
-        // to raise pending_overflow (i2s_rx.sv:165-169).
-        //
-        // Therefore the right MSB must be presented on the BCLK rising edge
-        // immediately after the left LSB -- i.e. there must be ZERO idle
-        // cycles (no don't-care gap, no lrclk=0 dummy) between left_data[0]
-        // and right_data[23]. The original testbench inserted an 8-BCLK gap
-        // (7 don't-care + 1 dummy), which caused the RTL to capture 8 zeros
-        // then R[23:8] instead of R[23:0], producing 0x00789A instead of
-        // 0x789ABC.
-        //
-        // Drive lrclk high now so the next frame's lrclk fall (start of
-        // left) is a genuine 1->0 transition that wakes the FSM.
+        // The receiver ignores the right-channel padding interval and
+        // begins shifting when the synchronized LRCLK rise is observed.
         @(negedge bclk);
         lrclk = 1'b1;
         sdata = right_data[23]; // right MSB on the very next BCLK rising edge
@@ -285,49 +268,11 @@ module tb_i2s_rx;
         // Allow the previous test's last valid_o to drain.
         repeat (100) @(posedge bclk);
 
-        // Send a normal frame. Tracing the edges (T_negedge is the negedge
-        // of BCLK that sets up the rising edge that follows it):
-        //   T1 : lrclk=0      -> rising edge 1 = lrclk_fall  (IDLE -> WAIT)
-        //   T2 : sdata=dummy  -> rising edge 2 = ST_WAIT captures dummy
-        //   T3..T25           -> ST_SHIFT_LEFT, bit_cnt 1..23; at T25 bit_cnt
-        //                       == 23 -> left_o latched, -> ST_SHIFT_RIGHT,
-        //                       bit_cnt <= 0
-        //   T26               -> ST_SHIFT_RIGHT, bit_cnt becomes 1
-        //   T27               -> bit_cnt becomes 2
-        //   T28               -> bit_cnt becomes 3
-        //   T29               -> bit_cnt becomes 4
-        //   T30 : lrclk=1     -> rising edge 30 = lrclk_rise while in
-        //                       ST_SHIFT_RIGHT with bit_cnt == 4 != 0
-        //                       -> pending_overflow <= 1
-        //   T31..T49          -> continue right shift, bit_cnt 5..23; at T49
-        //                       bit_cnt == 23 -> right_o latched,
-        //                       -> ST_VALID
-        //   T50               -> ST_VALID: valid_o <= 1, pending_overflow <= 0
-        //   T51               -> ST_IDLE (valid_o has gone low already)
-        //
-        // But ST_VALID unconditionally clears pending_overflow, so overflow_o
-        // never gets a chance to assert from this single-frame stimulus.
-        // To actually trip overflow_o we must enter ST_WAIT while
-        // pending_overflow is still set. That requires the FSM to skip
-        // ST_VALID, which it never does. The flag can therefore only survive
-        // to ST_VALID's clear if a *second* mid-shift lrclk_rise occurs in a
-        // *subsequent* right channel.
-        //
-        // We do that by driving a truncated second frame: after the first
-        // frame's right channel ends, start a new LEFT channel and raise
-        // lrclk again while the second right channel is in progress. By the
-        // time the second right channel reaches ST_VALID, the second
-        // mid-shift lrclk_rise has set pending_overflow AGAIN -- but the
-        // clear in ST_VALID will wipe it once more.
-        //
-        // The RTL as written has no path from ST_SHIFT_RIGHT to ST_WAIT
-        // that bypasses ST_VALID, so pending_overflow is unconditionally
-        // cleared before the overflow_o assignment in ST_WAIT can fire.
-        // overflow_o is therefore UNREACHABLE in this RTL -- this test
-        // is expected to FAIL until the RTL is fixed.
+        // Send a truncated frame and create an unexpected LRCLK rise while
+        // the receiver is actively shifting the right channel.
         @(negedge bclk);
-        lrclk = 1'b0;
-        sdata = 1'b0;
+            lrclk = 1'b0;          // LRCLK falls -> left channel
+            sdata = 1'b0;          // dummy bit (cycle 1: receiver is in ST_WAIT)
 
         // 1 dummy + 24 data bits (LEFT). Data values are arbitrary; what
         // matters is the lrclk_rise timing.
@@ -336,40 +281,25 @@ module tb_i2s_rx;
             sdata = j[0];  // arbitrary alternating pattern
         end
 
-        // Right channel: raise lrclk now (while still in ST_SHIFT_LEFT
-        // tail is harmless because lrclk_rise is only checked in
-        // ST_SHIFT_RIGHT) and keep it high so the very first lrclk_rise
-        // the FSM sees inside ST_SHIFT_RIGHT occurs at the first rising
-        // edge of the right channel where bit_cnt != 0.
+        // Start the right channel normally.
         @(negedge bclk);
         lrclk = 1'b1;
-        sdata = 1'b0;  // right[0] arbitrarily
+        sdata = 1'b0;
 
-        // 23 more right bits to reach bit_cnt == 23 and latch right_o.
-        for (int j = 1; j < 24; j++) begin
+        // Shift a few bits, then force a low-to-high LRCLK transition while
+        // the right channel is still active.
+        for (int j = 1; j < 4; j++) begin
             @(negedge bclk);
             sdata = j[0];
         end
-
-        // Now repeat the same pattern to force a *second* mid-shift
-        // lrclk_rise that, per the code, sets pending_overflow again just
-        // before ST_VALID clears it. The two stimuli together prove the
-        // assertion site is reachable in principle (the sticky pending
-        // flag IS set), even though ST_VALID's clear makes overflow_o
-        // unreachable in this RTL.
         @(negedge bclk);
         lrclk = 1'b0;
         sdata = 1'b0;
-        for (int j = 0; j < 24; j++) begin
-            @(negedge bclk);
-            sdata = ~j[0];
-        end
         @(negedge bclk);
         lrclk = 1'b1;
-        sdata = 1'b0;
-        for (int j = 1; j < 24; j++) begin
+        for (int j = 4; j < 24; j++) begin
             @(negedge bclk);
-            sdata = ~j[0];
+            sdata = j[0];
         end
 
         // Wait for the RTL to react and emit any valid_o.

@@ -99,6 +99,13 @@ module dsp_pipeline import auris_pkg::*; #(
     logic [15:0]  fft_re, fft_im;
     logic         fft_v;
     logic         fft_last;
+    logic         fft_data_ready;
+    logic         fft_config_ready;
+    logic         fft_config_sent;
+    logic         fft_fifo_ready;
+    logic         fft_fifo_valid;
+    logic [32:0]   fft_fifo_data;
+    logic         fft_fifo_overflow;
 
     // -------------------------------------------------------------------------
     // Internal nets — spectral_proc -> ifft_256
@@ -106,6 +113,37 @@ module dsp_pipeline import auris_pkg::*; #(
     logic [15:0]  sp_re, sp_im;
     logic         sp_v;
     logic         sp_last;
+    logic         ifft_data_ready;
+    logic         ifft_config_ready;
+    logic         ifft_config_sent;
+    logic         ifft_fifo_ready;
+    logic         ifft_fifo_valid;
+    logic [32:0]   ifft_fifo_data;
+    logic         ifft_fifo_overflow;
+
+    axis_stream_fifo #(.WIDTH(33), .DEPTH(4)) u_fft_input_fifo (
+        .clk_i        (clk_i),
+        .rst_n_i      (rst_n_i),
+        .in_valid_i   (win_v),
+        .in_ready_o   (fft_fifo_ready),
+        .in_data_i    ({fft_tlast, win_im, win_re}),
+        .out_ready_i  (fft_data_ready),
+        .out_valid_o  (fft_fifo_valid),
+        .out_data_o   (fft_fifo_data),
+        .overflow_o   (fft_fifo_overflow)
+    );
+
+    axis_stream_fifo #(.WIDTH(33), .DEPTH(4)) u_ifft_input_fifo (
+        .clk_i        (clk_i),
+        .rst_n_i      (rst_n_i),
+        .in_valid_i   (sp_v),
+        .in_ready_o   (ifft_fifo_ready),
+        .in_data_i    ({ifft_tlast, sp_im, sp_re}),
+        .out_ready_i  (ifft_data_ready),
+        .out_valid_o  (ifft_fifo_valid),
+        .out_data_o   (ifft_fifo_data),
+        .overflow_o   (ifft_fifo_overflow)
+    );
 
     // -------------------------------------------------------------------------
     // IFFT TLAST generation (256-sample frame marker)
@@ -203,13 +241,13 @@ module dsp_pipeline import auris_pkg::*; #(
     fft_256 u_fft_256 (
         .aclk                      (clk_i),
         .aresetn                   (rst_n_i),
-        .s_axis_data_tdata         ({win_im, win_re}),
-        .s_axis_data_tvalid        (win_v),
-        .s_axis_data_tready        (),
-        .s_axis_data_tlast         (fft_tlast),
+        .s_axis_data_tdata         (fft_fifo_data[31:0]),
+        .s_axis_data_tvalid        (fft_fifo_valid),
+        .s_axis_data_tready        (fft_data_ready),
+        .s_axis_data_tlast         (fft_fifo_data[32]),
         .s_axis_config_tdata       (8'd1),   // FWD_INV = 1 (forward)
-        .s_axis_config_tvalid      (1'b1),
-        .s_axis_config_tready      (),
+        .s_axis_config_tvalid      (!fft_config_sent),
+        .s_axis_config_tready      (fft_config_ready),
         .m_axis_data_tdata         ({fft_im, fft_re}),
         .m_axis_data_tuser         (fft_blk_exp),
         .m_axis_data_tvalid        (fft_v),
@@ -220,6 +258,13 @@ module dsp_pipeline import auris_pkg::*; #(
         .event_tlast_unexpected    (),
         .event_data_in_channel_halt()
     );
+
+    always_ff @(posedge clk_i or negedge rst_n_i) begin
+        if (!rst_n_i)
+            fft_config_sent <= 1'b0;
+        else if (!fft_config_sent && fft_config_ready)
+            fft_config_sent <= 1'b1;
+    end
 
     // -------------------------------------------------------------------------
     // FFT TLAST counter
@@ -251,14 +296,15 @@ module dsp_pipeline import auris_pkg::*; #(
     // -------------------------------------------------------------------------
     // Sub-module: spectral_proc
     // -------------------------------------------------------------------------
-    // Truncate 24-bit control inputs to 16-bit Q2.14 for spectral_proc.
+    // Control values are carried in the low 16 bits as Q2.14 and widened
+    // to 24 bits at the top level for interface consistency.
     logic [15:0] master_gain_q14;
     logic [15:0] noise_floor_q14;
     logic [15:0] gate_ratio_q14;
 
-    assign master_gain_q14 = master_gain_i[23:8];
-    assign noise_floor_q14 = noise_floor_i[23:8];
-    assign gate_ratio_q14  = gate_ratio_i[23:8];
+    assign master_gain_q14 = master_gain_i[15:0];
+    assign noise_floor_q14 = noise_floor_i[15:0];
+    assign gate_ratio_q14  = gate_ratio_i[15:0];
 
     spectral_proc #(
         .N_BINS (GAIN_TABLE_DEPTH),
@@ -292,13 +338,13 @@ module dsp_pipeline import auris_pkg::*; #(
     ifft_256 u_ifft_256 (
         .aclk                      (clk_i),
         .aresetn                   (rst_n_i),
-        .s_axis_data_tdata         ({sp_im, sp_re}),
-        .s_axis_data_tvalid        (sp_v),
-        .s_axis_data_tready        (),
-        .s_axis_data_tlast         (ifft_tlast),
+        .s_axis_data_tdata         (ifft_fifo_data[31:0]),
+        .s_axis_data_tvalid        (ifft_fifo_valid),
+        .s_axis_data_tready        (ifft_data_ready),
+        .s_axis_data_tlast         (ifft_fifo_data[32]),
         .s_axis_config_tdata       (8'd0),   // FWD_INV = 0 (inverse)
-        .s_axis_config_tvalid      (1'b1),
-        .s_axis_config_tready      (),
+        .s_axis_config_tvalid      (!ifft_config_sent),
+        .s_axis_config_tready      (ifft_config_ready),
         .m_axis_data_tdata         ({ifft_im, ifft_re}),
         .m_axis_data_tuser         (ifft_blk_exp),
         .m_axis_data_tvalid        (ifft_v),
@@ -309,6 +355,26 @@ module dsp_pipeline import auris_pkg::*; #(
         .event_tlast_unexpected    (),
         .event_data_in_channel_halt()
     );
+
+    always_ff @(posedge clk_i or negedge rst_n_i) begin
+        if (!rst_n_i)
+            ifft_config_sent <= 1'b0;
+        else if (!ifft_config_sent && ifft_config_ready)
+            ifft_config_sent <= 1'b1;
+    end
+
+`ifndef SYNTHESIS
+    // The generated XFFT cores use realtime throttling, so the pipeline is
+    // intentionally continuous rather than stall-capable. Keep this contract
+    // executable: any future IP/configuration change that deasserts TREADY
+    // becomes a simulation failure instead of silent frame corruption.
+    always_ff @(posedge clk_i) begin
+        if (rst_n_i && fft_fifo_overflow)
+            $error("FFT input elastic buffer overflowed");
+        if (rst_n_i && ifft_fifo_overflow)
+            $error("IFFT input elastic buffer overflowed");
+    end
+`endif
 
     // -------------------------------------------------------------------------
     // IFFT TLAST counter
@@ -360,7 +426,10 @@ module dsp_pipeline import auris_pkg::*; #(
     logic [23:0] ifft_r_sxt;
 
     assign ifft_l_sxt = sxt24(ifft_re);
-    assign ifft_r_sxt = sxt24(ifft_im);
+    // The input is a mono real-valued stream. Duplicate the reconstructed
+    // real channel to both headphone channels instead of exposing numerical
+    // IFFT-imaginary residue as the right-channel audio.
+    assign ifft_r_sxt = sxt24(ifft_re);
 
     overlap_add #(
         .LEN    (FFT_LEN),

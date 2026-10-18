@@ -37,7 +37,7 @@ module mode_ctrl import auris_pkg::*; #(
     input  wire                clk_i,
     input  wire                rst_n_i,
 
-    input  wire [1:0]          mode_i,          // from reg_file
+    input  wire [1:0]          mode_i,          // from top-level button FSM
     input  wire                mode_we_i,       // pulse when mode reg is written
 
     // Streaming write port to gain-table bank BRAM
@@ -241,12 +241,17 @@ module mode_ctrl import auris_pkg::*; #(
         input logic [1:0] mode,
         input int         idx
     );
+        int symmetric_idx;
+        // The real-input FFT requires conjugate bins to receive the same
+        // real gain. Mirror the upper half of the compact table in hardware
+        // so hand-edited tables cannot break Hermitian symmetry.
+        symmetric_idx = (idx > 64) ? (128 - idx) : idx;
         case (mode)
-            MODE_GENERAL: lookup_gain = GAIN_GENERAL[idx];
-            MODE_SPEECH:  lookup_gain = GAIN_SPEECH [idx];
-            MODE_MUSIC:   lookup_gain = GAIN_MUSIC  [idx];
-            MODE_HEARING: lookup_gain = GAIN_HEARING[idx];
-            default:      lookup_gain = GAIN_GENERAL[idx];  // safe fallback
+            MODE_GENERAL: lookup_gain = GAIN_GENERAL[symmetric_idx];
+            MODE_SPEECH:  lookup_gain = GAIN_SPEECH [symmetric_idx];
+            MODE_MUSIC:   lookup_gain = GAIN_MUSIC  [symmetric_idx];
+            MODE_HEARING: lookup_gain = GAIN_HEARING[symmetric_idx];
+            default:      lookup_gain = GAIN_GENERAL[symmetric_idx];
         endcase
     endfunction
 
@@ -264,6 +269,8 @@ module mode_ctrl import auris_pkg::*; #(
     logic [1:0]    pending_bank;   // bank being written this transaction
     logic          active_bank;    // currently-live bank (0 or 1)
     logic          initial_load;   // 1-cycle trigger: populate BRAM at boot
+    logic [1:0]    load_mode;      // mode associated with the pending table
+    logic [1:0]    committed_mode; // mode associated with active_bank
 
     // -------------------------------------------------------------------------
     // Main FSM
@@ -280,6 +287,11 @@ module mode_ctrl import auris_pkg::*; #(
             bank_sel_o         <= 2'd0;
             bank_commit_o      <= 1'b0;
             initial_load       <= 1'b1;   // schedule first-time GENERAL load
+            load_mode          <= MODE_GENERAL;
+            committed_mode     <= MODE_GENERAL;
+            default_master_gain_o <= 24'd16384;
+            default_noise_floor_o <= 24'd4096;
+            default_gate_ratio_o  <= 24'd12288;
         end else begin
             // Pulse defaults: keep bank_we_o and bank_commit_o single-cycle.
             bank_we_o     <= 1'b0;
@@ -297,11 +309,13 @@ module mode_ctrl import auris_pkg::*; #(
                         // init defaults while still exercising the FSM.
                         initial_load <= 1'b0;
                         pending_bank <= active_bank ? 2'd0 : 2'd1;  // toggle from A
+                        load_mode    <= MODE_GENERAL;
                         load_idx     <= 7'd0;
                         state        <= ST_LOAD;
                     end else if (mode_we_i) begin
                         // Target the inactive bank (toggle LSB).
                         pending_bank <= active_bank ? 2'd0 : 2'd1;
+                        load_mode    <= mode_i;
                         load_idx     <= 7'd0;
                         state        <= ST_LOAD;
                     end
@@ -310,7 +324,7 @@ module mode_ctrl import auris_pkg::*; #(
                 ST_LOAD: begin
                     bank_we_o     <= 1'b1;
                     bank_addr_o   <= load_idx;
-                    bank_wdata_o  <= lookup_gain(mode_i, int'(load_idx));
+                    bank_wdata_o  <= lookup_gain(load_mode, int'(load_idx));
                     bank_sel_o    <= pending_bank;
                     if (load_idx == N_BINS[$bits(load_idx)-1:0] - 7'd1) begin
                         state    <= ST_COMMIT;
@@ -323,6 +337,29 @@ module mode_ctrl import auris_pkg::*; #(
                 ST_COMMIT: begin
                     bank_commit_o <= 1'b1;
                     active_bank   <= pending_bank[0];
+                    committed_mode<= load_mode;
+                    case (load_mode)
+                        MODE_SPEECH: begin
+                            default_master_gain_o <= 24'd17203;
+                            default_noise_floor_o <= 24'd16384;
+                            default_gate_ratio_o  <= 24'd9830;
+                        end
+                        MODE_MUSIC: begin
+                            default_master_gain_o <= 24'd16384;
+                            default_noise_floor_o <= 24'd2048;
+                            default_gate_ratio_o  <= 24'd13926;
+                        end
+                        MODE_HEARING: begin
+                            default_master_gain_o <= 24'd18022;
+                            default_noise_floor_o <= 24'd32768;
+                            default_gate_ratio_o  <= 24'd9011;
+                        end
+                        default: begin
+                            default_master_gain_o <= 24'd16384;
+                            default_noise_floor_o <= 24'd4096;
+                            default_gate_ratio_o  <= 24'd12288;
+                        end
+                    endcase
                     state         <= ST_IDLE;
                 end
 
@@ -330,17 +367,6 @@ module mode_ctrl import auris_pkg::*; #(
             endcase
         end
     end
-
-    // -------------------------------------------------------------------------
-    // Mode-specific defaults for the simple scalar registers
-    // -------------------------------------------------------------------------
-    // All modes currently share the same sensible defaults: master gain
-    // unity, conservative noise floor, gate ratio unity.  Per-mode tuning
-    // of these scalars can be added later by feeding a small case
-    // statement on `mode_i` here without touching the FSM.
-    assign default_master_gain_o = {8'sd0, UNITY_GAIN_Q14};
-    assign default_noise_floor_o = 24'sd100;
-    assign default_gate_ratio_o  = {8'sd0, UNITY_GAIN_Q14};
 
     // -------------------------------------------------------------------------
     // Synthesis-time sanity

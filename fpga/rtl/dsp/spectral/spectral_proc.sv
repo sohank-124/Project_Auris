@@ -168,12 +168,12 @@ module spectral_proc import auris_pkg::*; #(
     // -------------------------------------------------------------------------
     // Pipeline stage 2: effective_gain = gain_s1 * master_gain_i (Q2.14)
     // -------------------------------------------------------------------------
-    logic signed [DATA_W-1:0] eff_gain_s2;
+    logic [DATA_W-1:0]        eff_gain_s2;
     logic [DATA_W-1:0]        in_re_s2, in_im_s2;
     logic                     in_v_s2,  in_last_s2;
-    logic signed [31:0]       eff_mul;
+    logic [31:0]              eff_mul;
 
-    assign eff_mul = $signed(gain_s1) * $signed(master_gain_i);
+    assign eff_mul = gain_s1 * master_gain_i;
 
     always_ff @(posedge clk_i or negedge rst_n_i) begin
         if (!rst_n_i) begin
@@ -195,7 +195,9 @@ module spectral_proc import auris_pkg::*; #(
     // Pipeline stage 3: compute |X|^2 = re^2 + im^2
     // -------------------------------------------------------------------------
     logic signed [31:0] mag_sq_s3;
-    logic signed [DATA_W-1:0] eff_gain_s3;
+    logic [DATA_W-1:0]        eff_gain_s3;
+    logic [DATA_W-1:0]        noise_floor_s3;
+    logic [DATA_W-1:0]        gate_ratio_s3;
     logic [DATA_W-1:0]        in_re_s3, in_im_s3;
     logic                     in_v_s3,  in_last_s3;
     logic signed [31:0]       re_sq, im_sq;
@@ -207,6 +209,8 @@ module spectral_proc import auris_pkg::*; #(
         if (!rst_n_i) begin
             mag_sq_s3   <= '0;
             eff_gain_s3 <= '0;
+            noise_floor_s3 <= '0;
+            gate_ratio_s3  <= '0;
             in_re_s3    <= '0;
             in_im_s3    <= '0;
             in_v_s3     <= 1'b0;
@@ -214,6 +218,8 @@ module spectral_proc import auris_pkg::*; #(
         end else begin
             mag_sq_s3   <= re_sq + im_sq;
             eff_gain_s3 <= eff_gain_s2;
+            noise_floor_s3 <= noise_floor_i;
+            gate_ratio_s3  <= gate_ratio_i;
             in_re_s3    <= in_re_s2;
             in_im_s3    <= in_im_s2;
             in_v_s3     <= in_v_s2;
@@ -226,7 +232,7 @@ module spectral_proc import auris_pkg::*; #(
     // -------------------------------------------------------------------------
     // If |X|^2 < noise_floor: gated_gain = gate_ratio (attenuated)
     // Else:                   gated_gain = eff_gain_s3
-    logic signed [DATA_W-1:0] gated_gain;
+    logic [DATA_W-1:0]        gated_gain;
     logic                     gate_open;
     logic signed [31:0]       mul_re, mul_im;
     logic                     gate_mag_is_pos; // mag_sq is unsigned; treat as >=0
@@ -238,7 +244,7 @@ module spectral_proc import auris_pkg::*; #(
 
     always_comb begin
         if (gate_mag_is_pos &&
-            ($unsigned(mag_sq_s3) < $unsigned(noise_floor_i)))
+            ($unsigned(mag_sq_s3) < $unsigned(noise_floor_s3)))
             gate_open = 1'b0;
         else
             gate_open = 1'b1;
@@ -246,11 +252,11 @@ module spectral_proc import auris_pkg::*; #(
 
     always_comb begin
         if (gate_open) gated_gain = eff_gain_s3;
-        else           gated_gain = $signed(gate_ratio_i);
+        else           gated_gain = gate_ratio_s3;
     end
 
-    assign mul_re = $signed(in_re_s3) * gated_gain;
-    assign mul_im = $signed(in_im_s3) * gated_gain;
+    assign mul_re = $signed(in_re_s3) * $signed({1'b0, gated_gain});
+    assign mul_im = $signed(in_im_s3) * $signed({1'b0, gated_gain});
 
     always_ff @(posedge clk_i or negedge rst_n_i) begin
         if (!rst_n_i) begin

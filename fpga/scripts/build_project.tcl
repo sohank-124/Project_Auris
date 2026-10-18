@@ -48,12 +48,18 @@ set sim_dir    [file normalize "${script_dir}/../sim"]
 set do_clean 0
 set jobs     4
 set part "xc7s25csga324-1"
+set proj_dir_override ""
+set self_test_enable 0
+set self_test_loopback_enable 0
 for {set i 0} {$i < [llength $argv]} {incr i} {
     set a [lindex $argv $i]
     switch -- $a {
         --clean  { set do_clean 1 }
         --part   { incr i; set part [lindex $argv $i] }
         --jobs   { incr i; set jobs [lindex $argv $i] }
+        --proj-dir { incr i; set proj_dir_override [lindex $argv $i] }
+        --self-test { set self_test_enable 1 }
+        --self-loopback { set self_test_loopback_enable 1 }
         default  { puts "Unknown arg: $a (ignored)" }
     }
 }
@@ -65,6 +71,9 @@ for {set i 0} {$i < [llength $argv]} {incr i} {
 # ---------------------------------------------------------------------------
 set proj_name "auris"
 set proj_dir  "./vivado_proj"
+if {$proj_dir_override ne ""} {
+    set proj_dir $proj_dir_override
+}
 
 puts "============================================================"
 puts "  Project Auris - Vivado build"
@@ -76,23 +85,44 @@ puts "  con_dir    = $con_dir"
 puts "  ip_dir     = $ip_dir"
 puts "  jobs       = $jobs"
 puts "  do_clean   = $do_clean"
+puts "  self_test  = $self_test_enable"
+puts "  self_loop  = $self_test_loopback_enable"
 puts "============================================================"
 
 # ---------------------------------------------------------------------------
-# 3. Wipe previous project so no stale cache pollutes the new one.
-#    file delete -force is a no-op when $proj_dir does not exist.
+# 3. Optionally wipe the previous project so no stale cache pollutes a
+#    deliberate clean build. Normal builds preserve the project directory,
+#    which allows Hardware Manager and the GUI to remain open.
 # ---------------------------------------------------------------------------
-file delete -force $proj_dir
+if {[llength [get_projects -quiet]] > 0} {
+    catch { close_project -quiet }
+}
+
+if {$do_clean && [file exists $proj_dir]} {
+    if {[catch { file delete -force $proj_dir } delete_err]} {
+        puts "ERROR: unable to delete existing project directory: $proj_dir"
+        puts "ERROR: $delete_err"
+        puts "Close any open Vivado project, hardware manager, xsim, or file browser using this directory, then rerun."
+        return 1
+    }
+}
 
 # ---------------------------------------------------------------------------
-# 4. Create the project
-#    -force overwrites any existing project of the same name.
+# 4. Create or reopen the project.
+#    Normal builds reopen the existing project so Vivado does not try to
+#    delete its active run directories. --clean is the explicit destructive
+#    path that recreates the project from scratch.
 #    target_language = Verilog is the correct value; SystemVerilog is
 #    parsed by Vivado's Verilog front-end.
 #    simulator_language = Mixed supports a future VHDL testbench if one
 #    is ever added.
 # ---------------------------------------------------------------------------
-create_project -force $proj_name $proj_dir -part $part
+set project_file [file join $proj_dir "${proj_name}.xpr"]
+if {!$do_clean && [file exists $project_file]} {
+    open_project $project_file
+} else {
+    create_project -force $proj_name $proj_dir -part $part
+}
 
 set_property target_language   Verilog [current_project]
 set_property simulator_language Mixed   [current_project]
@@ -112,6 +142,21 @@ add_files -fileset sources_1 $rtl_dir
 # Make the design's top module explicit. The top is the file-level
 # SystemVerilog module `top`, NOT a file name.
 set_property top top [get_filesets sources_1]
+
+# Optional bring-up generics for board-only validation without codecs.
+set top_generics [format "SELF_TEST_ENABLE=%d SELF_TEST_LOOPBACK_ENABLE=%d" \
+    $self_test_enable $self_test_loopback_enable]
+set_property generic $top_generics [get_filesets sources_1]
+puts "Applied top generics: $top_generics"
+
+# Existing run directories are valid only after their sources are refreshed.
+# Reset them explicitly on a non-clean rebuild instead of deleting the whole
+# project tree.
+foreach run_name {synth_1 impl_1} {
+    if {[llength [get_runs -quiet $run_name]] > 0} {
+        reset_run $run_name
+    }
+}
 
 # ---------------------------------------------------------------------------
 # 6. Add constraints
@@ -156,37 +201,40 @@ set xfft_cfg [list \
     CONFIG.memory_options_hybrid        {false} \
 ]
 
-# 7b. FFT instance
+# 7b. FFT and IFFT instances
 #     Wipe any previous output directory first: if stale fft_256_core(_N)
 #     subdirs are present, Vivado silently appends a _N suffix to the new
 #     one, which is how dozens of stale versions accumulated here.
 #     The -dir target must exist (create_ip does not create it).
-if {[llength [get_ips fft_256_core]] > 0} {
-    remove_ip [get_ips fft_256_core]
-}
-file delete -force [file join $ip_dir fft_256_core]
-file mkdir [file join $ip_dir fft_256_core]
-create_ip -name xfft -vendor xilinx.com -library ip -version 9.1 \
-    -module_name fft_256_core \
-    -dir [file join $ip_dir fft_256_core]
-set_property -dict $xfft_cfg [get_ips fft_256_core]
-generate_target all [get_ips fft_256_core]
+if {$do_clean} {
+    if {[llength [get_ips -quiet fft_256_core]] > 0} {
+        catch {remove_ip [get_ips fft_256_core]}
+    }
+    file delete -force [file join $ip_dir fft_256_core]
+    file mkdir [file join $ip_dir fft_256_core]
+    create_ip -name xfft -vendor xilinx.com -library ip -version 9.1 \
+        -module_name fft_256_core \
+        -dir [file join $ip_dir fft_256_core]
+    set_property -dict $xfft_cfg [get_ips fft_256_core]
+    generate_target all [get_ips fft_256_core]
 
-# 7c. IFFT instance
-if {[llength [get_ips ifft_256_core]] > 0} {
-    remove_ip [get_ips ifft_256_core]
-}
-file delete -force [file join $ip_dir ifft_256_core]
-file mkdir [file join $ip_dir ifft_256_core]
-create_ip -name xfft -vendor xilinx.com -library ip -version 9.1 \
-    -module_name ifft_256_core \
-    -dir [file join $ip_dir ifft_256_core]
-set_property -dict $xfft_cfg [get_ips ifft_256_core]
-generate_target all [get_ips ifft_256_core]
+    if {[llength [get_ips -quiet ifft_256_core]] > 0} {
+        catch {remove_ip [get_ips ifft_256_core]}
+    }
+    file delete -force [file join $ip_dir ifft_256_core]
+    file mkdir [file join $ip_dir ifft_256_core]
+    create_ip -name xfft -vendor xilinx.com -library ip -version 9.1 \
+        -module_name ifft_256_core \
+        -dir [file join $ip_dir ifft_256_core]
+    set_property -dict $xfft_cfg [get_ips ifft_256_core]
+    generate_target all [get_ips ifft_256_core]
 
-puts "IP generation complete:"
-puts "  ${ip_dir}/fft_256_core/fft_256_core.xci"
-puts "  ${ip_dir}/ifft_256_core/ifft_256_core.xci"
+    puts "IP generation complete:"
+    puts "  ${ip_dir}/fft_256_core/fft_256_core.xci"
+    puts "  ${ip_dir}/ifft_256_core/ifft_256_core.xci"
+} else {
+    puts "Reusing existing generated FFT/IFFT IP; use --clean to regenerate."
+}
 
 # ---------------------------------------------------------------------------
 # 8. Synthesis

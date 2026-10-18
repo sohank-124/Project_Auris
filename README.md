@@ -11,8 +11,8 @@ Project Auris is an open-source FPGA-only hearing-assistive platform
 built around a Xilinx Spartan-7 FPGA (Arty S7-25) that performs
 real-time spectral audio processing in a wearable form factor. An
 INMP441 MEMS microphone feeds a 256-point FFT pipeline running on the
-FPGA, which applies user-configurable per-bin gain, noise gating, and
-dynamic range compression before reconstruction and playback through a
+FPGA, which applies user-configurable per-bin gain and calibrated noise
+gating before reconstruction and playback through a
 PCM5102A DAC. The FPGA is the sole control plane — onboard push
 buttons drive mode selection and volume, the RGB LED indicates the
 active mode, and four named listening profiles (*General*, *Speech*,
@@ -29,8 +29,11 @@ flash**. The **Arty S7-25** performs all signal processing **and** all
 control: it generates the I2S clocks (BCLK and LRCLK), drives the
 user interface from the four onboard push buttons, loads the
 selected mode's pre-computed per-bin gain table, and processes audio
-through a 256-point overlap-save FFT pipeline with per-bin gain and
-gating.
+through a 256-point overlap-add FFT pipeline with per-bin gain and
+gating. In the current FPGA-only build, each mode also applies
+distinct scalar controls (master gain, gate ratio, base noise floor),
+and an adaptive ambient tracker raises the effective noise floor in
+noisy conditions.
 
 ```mermaid
 graph LR
@@ -71,7 +74,12 @@ The signal flow on the FPGA is
 The spectral processor reads its per-bin gain coefficients from a
 dual-port BRAM that `mode_ctrl` populates from the pre-computed tables
 shipped inside the bitstream; mode changes are triggered by BTN0/BTN1
-and committed atomically to avoid audible artefacts.
+and committed atomically to avoid audible artefacts. Mode-specific
+scalar defaults are applied in the same control path, and a lightweight
+adaptive noise-floor tracker in `top.sv` feeds the DSP gate threshold.
+Elastic AXI-stream buffers protect both XFFT inputs from short realtime
+`TREADY` stalls; a focused 4 ms XFFT handshake regression checks that
+neither buffer overflows.
 
 ---
 
@@ -103,6 +111,32 @@ make tools
 # 3. Build the FPGA bitstream (outputs to fpga/vivado_proj/...)
 make fpga
 ```
+
+### FPGA-Only Self-Test (No Mic / No DAC)
+
+If you only have the Arty S7-25 board and USB cable, use the built-in
+self-test path:
+
+```bash
+# Top-level self-test simulation (includes JA7->JA6 digital loopback emulation)
+make fpga-sim-selftest
+
+# Build a self-test bitstream (internal deterministic stimulus + loopback checker)
+make fpga-selftest
+
+# Focused XFFT backpressure check (shorter than the full audio simulation)
+vivado -mode batch -source fpga/scripts/sim_xfft_handshake.tcl
+```
+
+Board procedure for no-codec bring-up:
+
+1. Place one jumper wire from JA7 (I2S DAC data out) to JA6 (I2S ADC data in).
+2. Program the self-test bitstream.
+3. Observe RGB LED status:
+  - blinking yellow: checker warming up / accumulating evidence
+  - cyan: sustained loopback pass
+  - red: loopback mismatch detected
+4. STATUS2 (clip/error LED) also latches high on loopback mismatch.
 
 ### Flash and Run
 
@@ -171,8 +205,11 @@ in [`hardware/bom/bom.csv`](hardware/bom/bom.csv).
 
 ## Project Status
 
-The FPGA-only architecture is implemented and verified at the RTL
-source level. The migration from the pre-migration ESP32 + FPGA
+The FPGA-only architecture is implemented at the RTL source level. The
+core repair pass has addressed I2S framing, stereo routing, fixed-point
+gain handling, mode-commit atomicity, and XFFT configuration handshakes;
+fresh simulation and implementation reports are still required before
+claiming full end-to-end verification. The migration from the pre-migration ESP32 + FPGA
 build is documented in
 [`docs/migration_summary.md`](docs/migration_summary.md) (narrative)
 and [`docs/fpga_only_migration_forensic_audit_2026-08-12.md`](docs/fpga_only_migration_forensic_audit_2026-08-12.md)
@@ -183,11 +220,11 @@ and [`docs/fpga_only_migration_forensic_audit_2026-08-12.md`](docs/fpga_only_mig
 | FPGA toolchain (Vivado)          | ✅ Verified — bitstream synthesises, MMCM locks |
 | `clk_gen` (12 MHz → 96 MHz DSP + frac BCLK + LRCLK) | ✅ Implemented |
 | I²S master mode (FPGA drives BCLK/LRCLK) | ✅ Implemented |
-| `i2s_rx` (24-bit slave receiver)   | ✅ Implemented, testbench passes |
-| `i2s_tx` (24-bit slave transmitter) | ✅ Implemented, testbench passes |
+| `i2s_rx` (24-bit slave receiver)   | ✅ Implemented; framing regression updated |
+| `i2s_tx` (24-bit slave transmitter) | ✅ Implemented; hardware timing validation pending |
 | CDC FIFOs (i2s↔dsp, both directions, ×2 L/R) | ✅ Implemented, testbench passes |
-| 256-pt FFT pipeline (input buf → Hann → FFT → spectral proc → IFFT → OLA → volume → output buf) | ✅ Implemented, testbench passes |
-| Mode switching (BTN0/BTN1, 4 pre-computed gain tables) | ✅ Implemented |
+| 256-pt FFT pipeline (input buf → Hann → FFT → spectral proc → IFFT → OLA → volume → output buf) | ✅ Implemented; XFFT handshake check passes |
+| Mode switching (BTN0/BTN1, 4 pre-computed gain tables + per-mode scalar controls) | ✅ Implemented |
 | Volume control (BTN2/BTN3, 31 levels, sat24) | ✅ Implemented |
 | LED indicators (STATUS0 heartbeat, STATUS2 clip, RGB mode colour) | ✅ Implemented |
 | Bypass mode (`dsp_enable_i = 0`) | ✅ Implemented |

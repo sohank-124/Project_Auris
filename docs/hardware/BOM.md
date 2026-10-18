@@ -19,7 +19,7 @@ some passives can be sourced more cheaply from LCSC.
 |----------------|-------------------------------------|-----|------------------|--------|-----------------------|
 | FPGA module    | Arty S7-25 (Digilent 410-346)       | 1   | $59.00           | $59.00 | DigiKey / Digilent    |
 | Microphone     | INMP441 I2S MEMS mic (breakout)     | 1   | $8.00            | $8.00  | DigiKey / LCSC        |
-| DAC            | PCM5102APWR (TSSOP-20 / breakout)   | 1   | $6.50            | $6.50  | DigiKey / Mouser / LCSC |
+| DAC            | PCM5102A breakout (GY-PCM5102, 3.3 V or 5 V VIN — see note) | 1 | $6.50 | $6.50 | Amazon (e.g. DORHEA 5 V VIN) / DigiKey / Mouser / LCSC |
 | Breadboard     | 830-point solderless breadboard     | 1   | $5.00            | $5.00  | Amazon / generic      |
 | Jumper wires   | M-M assortment (65 pcs)             | 1   | $6.00            | $6.00  | Amazon / generic      |
 | Jumper wires   | M-F assortment (40 pcs)             | 1   | $5.00            | $5.00  | Amazon / generic      |
@@ -36,6 +36,14 @@ some passives can be sourced more cheaply from LCSC.
 > you can save ~$5 on the mic and ~$3 on the DAC, but the
 > assembly time and risk are not worth it for a single
 > prototype.
+>
+> **DAC voltage variants:** Amazon GY-PCM5102 listings come in two
+> flavors that look identical. 3.3 V-direct modules take `VCC` from
+> Pmod JA hole 6. 5 V-VIN modules with an onboard LDO (e.g. DORHEA
+> B0DCFN2JGF, `Supply: 5V`) need `VIN` from Arduino-header 5V0 or an
+> external 5 V supply — never from Pmod 3.3 V (LDO dropout starves
+> the chip) and never 5 V into FPGA I/O. Signals stay 3.3 V logic;
+> grounds must be common. See `WIRING.md` §5–§6 for both wirings.
 >
 > **No ESP32.** The pre-migration BOM listed an
 > ESP32-DevKitC-32E module (~$12) and a second USB cable

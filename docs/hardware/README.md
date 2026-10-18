@@ -41,19 +41,24 @@ codecs) and the **sole control plane**.
 
 ### Pmod JA — I²S interface (FPGA-driven clocks)
 
-| Signal | Direction | FPGA Pin (Pmod) | FPGA package pin | Voltage | Notes |
-|--------|-----------|-----------------|------------------|---------|-------|
-| I²S BCLK   | FPGA → Codecs | JA4 | M16 | 3.3 V | 3.072 MHz, 50% duty cycle (FPGA-generated) |
-| I²S LRCLK  | FPGA → Codecs | JA5 | M17 | 3.3 V | 48 kHz, 50% duty cycle (FPGA-generated) |
-| I²S ADC data | INMP441 → FPGA | JA6 | M18 | 3.3 V | 24-bit, left-justified, MSB first, mono (L-chan) |
-| I²S DAC data | FPGA → PCM5102A | JA7 | N18 | 3.3 V | 24-bit, MSB first, stereo |
+> Physical-hole convention: all Pmod references below are **physical
+> hole numbers** on the 2×6 JA header (see `WIRING.md` §3 for the
+> change notice and row-orientation check). Old signal names mapped:
+> `JA4`→hole 7, `JA5`→hole 8, `JA6`→hole 9, `JA7`→hole 10.
+
+| Signal | Direction | Physical hole | FPGA package pin | Voltage | Notes |
+|--------|-----------|---------------|------------------|---------|-------|
+| I²S BCLK   | FPGA → Codecs | Hole 7 | M16 | 3.3 V | 3.072 MHz, 50% duty cycle (FPGA-generated) |
+| I²S LRCLK  | FPGA → Codecs | Hole 8 | M17 | 3.3 V | 48 kHz, 50% duty cycle (FPGA-generated) |
+| I²S ADC data | INMP441 → FPGA | Hole 9 | M18 | 3.3 V | 24-bit, left-justified, MSB first, mono (L-chan) |
+| I²S DAC data | FPGA → PCM5102A | Hole 10 | N18 | 3.3 V | 24-bit, MSB first, stereo |
 
 ### Pmod JA — power rails
 
-| Pin | Net | Source |
+| Physical hole | Net | Source |
 |-----|-----|--------|
-| JA pin 5 | GND | Arty ground |
-| JA pin 6 | +3V3 | Arty 3.3 V rail (from onboard regulator) |
+| Hole 5 (both rows: 5 and 11) | GND | Arty ground |
+| Hole 6 (both rows: 6 and 12) | +3V3 | Arty 3.3 V rail (from onboard regulator) |
 
 The pre-migration Pmod JA0–JA3 pins (SPI SCLK / MOSI / MISO /
 CS_N) are **not** used in this build. They are exposed on the
@@ -100,27 +105,41 @@ on package pin **F14** (Bank 15, 3.3 V LVCMOS).
 
 The FPGA-only build runs from a single USB cable to the Arty
 S7-25. The Arty's onboard regulators produce the 3.3 V, 1.8 V,
-and 1.0 V rails. The INMP441 and PCM5102A are powered from the
-Arty's Pmod JA 3.3 V rail (pin 6).
+and 1.0 V rails. The INMP441 always runs from the Arty's Pmod
+JA 3.3 V rail (pin 6). The PCM5102A power depends on the module
+variant (see `WIRING.md` §5):
+
+- **Variant A (3.3 V direct):** DAC from Pmod JA 3.3 V rail (pin 6).
+- **Variant B (5 V VIN with onboard LDO, e.g. DORHEA B0DCFN2JGF):**
+  DAC `VIN` from 5 V — Arty Arduino-header 5V0 pin or an external
+  USB 5 V breakout. Onboard LDO makes 3.3 V for the chip. All
+  I2S signals stay 3.3 V logic; all grounds (Arty, mic, DAC, 5 V
+  supply) must be common. Never put 5 V on any FPGA I/O pin.
 
 | Rail | Source | Consumers | Estimated Current |
 |------|--------|-----------|--------------------|
-| 5 V  | USB (Arty) | Arty onboard regulators | ~500 mA (USB limit) |
-| 3.3 V| Arty 3V3 rail | INMP441, PCM5102A, FPGA I/O | ~50 mA combined |
+| 5 V  | USB (Arty) / Arduino 5V0 / external 5 V | Arty onboard regulators + Variant B DAC VIN | ~500 mA (USB limit) |
+| 3.3 V| Arty 3V3 rail | INMP441, DAC logic refs (XSMT/SCK/FMT), Variant A DAC, FPGA I/O | ~50 mA combined |
 
 ### Power distribution rules
 
 - **Arty S7-25** is powered from its Micro-USB jack (5 V input).
   The module has onboard switching regulators that produce
   3.3 V, 1.8 V, and 1.0 V rails. The 3.3 V rail is exposed on
-  the Pmod headers (pin 6 is +3V3, pin 5 is GND).
+  the Pmod headers (pin 6 is +3V3, pin 5 is GND). A 5 V rail is
+  available on the Arduino-shield header (5V0) for Variant B DACs.
 - **INMP441** is powered from the 3.3 V rail of the Arty Pmod
   JA header (pin 6). Maximum supply current is ~1.4 mA.
-- **PCM5102A** is powered from the 3.3 V rail of the Arty Pmod
-  JA header (pin 6). Maximum supply current is ~30 mA.
+- **PCM5102A Variant A** is powered from the 3.3 V rail of the
+  Arty Pmod JA header (pin 6). Maximum supply current is ~30 mA.
   Typical supply current is ~20 mA at full-scale output into
   32 Ω headphones. The DAC's charge pump requires the full
   3.3 V supply; do not power it from 1.8 V.
+- **PCM5102A Variant B (5 V VIN)** is powered from 5 V into `VIN`
+  (Arduino 5V0 or external 5 V, ~20–30 mA). The module's onboard
+  LDO produces the chip 3.3 V. `XSMT` still goes to 3.3 V (never
+  5 V — abs-max DVDD+0.3 V); `BCK`/`DIN`/`LRCK` stay 3.3 V FPGA
+  logic; GNDs must be common.
 - **Headphones** are driven directly from the PCM5102A's
   line-driver outputs (no external amplifier needed for
   typical 16–32 Ω headphones at moderate listening levels).

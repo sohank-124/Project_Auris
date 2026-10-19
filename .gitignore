@@ -47,3 +47,22 @@ hs_err_pid*.dmp
 
 # OS
 Thumbs.db
+
+# Local-only planning and application material
+/AGENTS.md
+/CODEOWNERS
+/CITATION.cff
+/PROJECT_AURIS_FROM_ZERO_GUIDE.md
+/docs/DEMO_PLAN.md
+/docs/IMPLEMENTATION_PLAN.md
+/docs/ROADMAP.md
+/docs/college_app/
+/docs/documentation_audit.md
+/docs/final_migration_cleanup_audit_2026-08-23.md
+/docs/final_precommit_verification_2026-08-24.md
+/docs/fpga_only_migration_forensic_audit_2026-08-12.md
+/docs/migration_summary.md
+/docs/phase_reports/
+/docs/session_summary_2026-08-12.md
+/docs/session_summary_fpga_only_verification.md
+/docs/verification_recovery_report.md

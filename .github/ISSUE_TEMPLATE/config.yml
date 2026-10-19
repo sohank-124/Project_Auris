@@ -1,18 +1,12 @@
 # ============================================================================
 # Project Auris - Issue / PR intake configuration
 # ----------------------------------------------------------------------------
-# Disables blank issues (every new issue must pick a template) and adds two
-# contact-link buttons in the issue chooser that point to the project's
-# GitHub Discussions and the documentation tree, so users with "I have a
-# question" or "where do I find X" don't open issues for them.
+# Disables blank issues and links to the project documentation.
 # ============================================================================
 
 blank_issues_enabled: false
 
 contact_links:
-  - name: Project Auris Q&A / Discussions
-    url: https://github.com/<OWNER>/project-auris/discussions
-    about: Please use Discussions for usage questions, design ideas, and general help.
   - name: Project Auris Documentation
-    url: https://github.com/<OWNER>/project-auris/tree/main/docs
+    url: https://github.com/sohank-124/Project_Auris/tree/main/docs
     about: Browse the in-tree documentation (`docs/`) for architecture, build instructions, and tuning guides.

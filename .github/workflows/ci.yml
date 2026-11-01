@@ -153,39 +153,16 @@ jobs:
           sudo apt-get install -y verilator
           verilator --version
 
-      # Verilator --lint-only is the cheapest sanity check we can run without
-      # a Vivado license. It catches:
-      #   * undeclared identifiers, type mismatches, unused signals
-      #   * basic SystemVerilog construct parsing
-      #
-      # Limitations of Verilator w.r.t. this design:
-      #   * Vivado IP cores (Clocking Wizard, FFT IP, etc.) are encrypted .xci
-      #     and cannot be parsed by Verilator. We lint `top.sv` and let
-      #     instances be elided.
-      #   * Some Xilinx UNISIM primitives are unknown to Verilator and emit
-      #     "implicit definition" warnings.
-      #
-      # Because of the above, we pass `-Wno-fatal` so warnings from elided
-      # IP / unknown UNISIM cells do not abort the lint. Real lint errors
-      # (undeclared signals in our hand-written RTL, type mismatches,
-      # illegal constructs) fail the build; width warnings can remain nonfatal. They
-      # must be reviewed separately. Tool errors are gating.
-      #
-      # The include path mirrors the structure of fpga/rtl/.
+      # Vendor interfaces are lint-only declarations, never functional models.
       - name: Verilator lint top.sv
         run: |
           set -euo pipefail
-          verilator --lint-only -Wall \
-            -Wno-fatal \
-            -I fpga/rtl \
-            -I fpga/rtl/pkg \
-            -I fpga/rtl/io \
-            -I fpga/rtl/cdc \
-            -I fpga/rtl/ctrl \
-            -I fpga/rtl/dsp \
-            -I fpga/rtl/dsp/spectral \
+          mapfile -t RTL < <(find fpga/rtl -name '*.sv' ! -name auris_pkg.sv | sort)
+          verilator --lint-only -Wall -Wno-fatal \
+            -Ifpga/rtl -Ifpga/rtl/pkg \
             --top-module top \
-            fpga/rtl/top.sv
+            fpga/rtl/pkg/auris_pkg.sv \
+            fpga/sim/lint/vendor_interfaces.sv "${RTL[@]}"
 
   # ==========================================================================
   # Sim: run the critical IP-level testbench with Verilator
@@ -226,8 +203,8 @@ jobs:
           rm -rf "obj_dir_${TB}"
           verilator --binary -j 0 \
             --top-module "${TB}" \
-            -I fpga/rtl/pkg \
-            -I fpga/rtl/io \
+            -Ifpga/rtl/pkg \
+            -Ifpga/rtl/io \
             --timing \
             fpga/rtl/pkg/auris_pkg.sv \
             fpga/rtl/io/i2s_rx.sv \

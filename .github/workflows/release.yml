@@ -98,16 +98,16 @@ jobs:
 
           # Drop a short README into the tarball so the contents are obvious.
           cat > "${{ env.ARTIFACT_DIR }}/README.txt" <<EOF
-Project Auris release artifacts
-===============================
+          Project Auris release artifacts
+          ===============================
 
-Contents:
-  generated/        Generated coefficient & gain tables (Hann window, default
-                    gain profiles) and JSON provenance; inspection only, not RTL inputs
-  bom.csv           Hardware bill of materials
-  LICENSE           MIT license
-  CHANGELOG.md      Project changelog
-EOF
+          Contents:
+            generated/        Generated coefficient & gain tables (Hann window, default
+                              gain profiles) and JSON provenance; inspection only, not RTL inputs
+            bom.csv           Hardware bill of materials
+            LICENSE           MIT license
+            CHANGELOG.md      Project changelog
+          EOF
 
           echo "---- Staged files ----"
           find "${{ env.ARTIFACT_DIR }}" -type f -printf "%P\n" | sort

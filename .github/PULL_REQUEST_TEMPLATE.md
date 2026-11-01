@@ -1,6 +1,6 @@
 <!--
 Thanks for contributing to Project Auris! Please fill out this template
-in full. A focused PR with a clear description and passing CI is far
+in full. A focused PR with a clear description and relevant local test results is far
 easier to review than a sprawling one.
 
 If your PR closes an existing issue, link it with "Closes #N". If it
@@ -48,7 +48,7 @@ Closes #
 ## Testing Checklist
 
 <!--
-Tick the boxes that apply. CI runs the lint and sim gates; the
+Tick the boxes that apply. Run relevant checks locally; the
 hardware-test row is for changes that need bench validation. Add a
 new test whenever you add a feature or fix a bug.
 -->
@@ -91,10 +91,3 @@ For everything else, write "N/A".
 - [ ] I have added an entry to [CHANGELOG.md](../CHANGELOG.md) under "Unreleased"
 - [ ] My PR is focused on a single concern (no unrelated drive-by edits)
 - [ ] I have signed off my commits (`git commit -s`)
-
-<!--
-After opening the PR, verify the CI dashboard (the Actions tab) shows
-green for all required jobs. If `ci-pass` is red, fix the underlying
-job — don't silence it with continue-on-error unless you have a tracked
-follow-up issue.
--->

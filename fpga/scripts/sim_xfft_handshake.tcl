@@ -3,7 +3,7 @@ set rtl_dir    [file normalize "${script_dir}/../rtl"]
 set sim_dir    [file normalize "${script_dir}/../sim"]
 set sim_tb_dir [file join $sim_dir testbenches]
 set work_dir   [file normalize "${script_dir}/../vivado_proj/sim_xfft_handshake"]
-set ip_dir     [file normalize "${script_dir}/../ip"]
+set ip_dir [file join $work_dir ip]
 set proj_name  "sim_xfft_handshake"
 set part       "xc7s25csga324-1"
 
@@ -42,9 +42,8 @@ foreach core {fft_256_core ifft_256_core} {
 set_property top tb_xfft_handshake [get_filesets sim_1]
 update_compile_order -fileset sources_1
 update_compile_order -fileset sim_1
-launch_simulation
-puts "Running focused XFFT handshake check for 4 ms ..."
-run 4 ms
-close_sim -force
+source [file join $script_dir simulation_common.tcl]
+auris_run_simulation /tb_xfft_handshake/test_done {4 ms}
+
 close_project
 return 0

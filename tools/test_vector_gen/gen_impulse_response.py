@@ -51,9 +51,7 @@ def gen_delay_ir(delay_samples: int, length: int = N_FFT) -> List[float]:
     return out
 
 
-def gen_lowpass_ir(cutoff_hz: float,
-                   n_taps: int = 64,
-                   fs: float = FS) -> List[float]:
+def gen_lowpass_ir(cutoff_hz: float, n_taps: int = 64, fs: float = FS) -> List[float]:
     """Return a windowed-sinc lowpass FIR impulse response.
 
     The windowed-sinc formula for a linear-phase lowpass is
@@ -124,27 +122,26 @@ def convolve_with_ir(signal: List[float], ir: List[float]) -> List[float]:
 # ---------------------------------------------------------------------------
 # Test-suite writer
 # ---------------------------------------------------------------------------
-def _write_signal_pair(out_dir: Path,
-                       name: str,
-                       sig_in: List[float],
-                       sig_out: List[float],
-                       ir: List[float]) -> None:
+def _write_signal_pair(
+    out_dir: Path, name: str, sig_in: List[float], sig_out: List[float], ir: List[float]
+) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     in_q = batch_float_to_q2_14(sig_in)
     out_q = batch_float_to_q2_14(sig_out)
     ir_q = batch_float_to_q2_14(ir)
 
-    write_hex(in_q, out_dir / f"{name}_in.hex",
-              header=f"IR test input, {name}")
-    write_hex(out_q, out_dir / f"{name}_out.hex",
-              header=f"IR test expected output, {name}")
-    write_hex(ir_q, out_dir / f"{name}_ir.hex",
-              header=f"IR test impulse response, {name}")
+    write_hex(in_q, out_dir / f"{name}_in.hex", header=f"IR test input, {name}")
+    write_hex(
+        out_q, out_dir / f"{name}_out.hex", header=f"IR test expected output, {name}"
+    )
+    write_hex(
+        ir_q, out_dir / f"{name}_ir.hex", header=f"IR test impulse response, {name}"
+    )
 
-    rows = [{"idx": i, "ir_float": ir[i], "ir_q2_14": ir_q[i]}
-            for i in range(len(ir))]
-    write_txt_table(rows, out_dir / f"{name}_ir.txt",
-                    columns=["idx", "ir_float", "ir_q2_14"])
+    rows = [{"idx": i, "ir_float": ir[i], "ir_q2_14": ir_q[i]} for i in range(len(ir))]
+    write_txt_table(
+        rows, out_dir / f"{name}_ir.txt", columns=["idx", "ir_float", "ir_q2_14"]
+    )
 
 
 def generate_ir_test_suite(out_dir: Path) -> dict:
@@ -188,16 +185,21 @@ def generate_ir_test_suite(out_dir: Path) -> dict:
     for name, ir in irs:
         sig_out = convolve_with_ir(sig, ir)
         _write_signal_pair(out_dir, name, sig, sig_out, ir)
-        cases.append({
-            "name": name,
-            "ir_length": len(ir),
-            "out_length": len(sig_out),
-            "max_abs_out": max(abs(v) for v in sig_out) if sig_out else 0.0,
-        })
+        cases.append(
+            {
+                "name": name,
+                "ir_length": len(ir),
+                "out_length": len(sig_out),
+                "max_abs_out": max(abs(v) for v in sig_out) if sig_out else 0.0,
+            }
+        )
 
-    summary = {"fs": FS, "n_fft": N_FFT,
-               "driver_signal": "sinusoid 500Hz 1024 samples",
-               "cases": cases}
+    summary = {
+        "fs": FS,
+        "n_fft": N_FFT,
+        "driver_signal": "sinusoid 500Hz 1024 samples",
+        "cases": cases,
+    }
     write_json(summary, out_dir / "ir_test_suite_summary.json")
     return summary
 
@@ -207,15 +209,21 @@ def generate_ir_test_suite(out_dir: Path) -> dict:
 # ---------------------------------------------------------------------------
 def main(argv: List[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="IR test-vector generator.")
-    p.add_argument("--out-dir", type=Path, default=Path("ir_test_vectors"),
-                   help="Destination directory (default: %(default)s).")
+    p.add_argument(
+        "--out-dir",
+        type=Path,
+        default=Path("ir_test_vectors"),
+        help="Destination directory (default: %(default)s).",
+    )
     args = p.parse_args(argv)
 
     summary = generate_ir_test_suite(args.out_dir)
     print(f"IR test suite written to {args.out_dir}")
     for c in summary["cases"]:
-        print(f"  {c['name']:12s} ir_len={c['ir_length']:4d}  "
-              f"out_len={c['out_length']:5d}  max={c['max_abs_out']:.4f}")
+        print(
+            f"  {c['name']:12s} ir_len={c['ir_length']:4d}  "
+            f"out_len={c['out_length']:5d}  max={c['max_abs_out']:.4f}"
+        )
     return 0
 
 

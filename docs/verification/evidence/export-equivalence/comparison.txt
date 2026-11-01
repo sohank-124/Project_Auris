@@ -1,0 +1,3 @@
+F30_HANN_EQUIVALENCE_PASS: 256/256 exact ordered 16-bit words; periodic none and cola
+F30_MODE_EXPORT_PASS: 512/512 embedded words; IDs and source hash exact
+F30_PATH_CONTRACT_PASS: outside-root defaults match CI/Make/release paths; local release staging includes provenance

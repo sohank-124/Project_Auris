@@ -18,7 +18,6 @@ This module computes:
 from __future__ import annotations
 
 import argparse
-import json
 import math
 import sys
 from pathlib import Path
@@ -33,8 +32,6 @@ if str(_TOOLS) not in sys.path:
 from common.constants import (
     FS,
     WDRC_CHANNELS,
-    N_BINS,
-    N_FFT,
 )
 from common.fixed_point import float_to_q2_14
 from common.formats import write_hex, write_txt_table, write_json
@@ -48,12 +45,14 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Per-channel open/close thresholds
 # ---------------------------------------------------------------------------
-def compute_noise_gate_table(thresholds_db: List[float] | None = None,
-                             hysteresis_db: float = 3.0,
-                             n_channels: int = WDRC_CHANNELS,
-                             f_low: float = 80.0,
-                             f_high: float | None = None,
-                             fs: float = FS) -> Dict[str, object]:
+def compute_noise_gate_table(
+    thresholds_db: List[float] | None = None,
+    hysteresis_db: float = 3.0,
+    n_channels: int = WDRC_CHANNELS,
+    f_low: float = 80.0,
+    f_high: float | None = None,
+    fs: float = FS,
+) -> Dict[str, object]:
     """Compute per-channel open/close thresholds with hysteresis.
 
     If ``thresholds_db`` is given, it must have length ``n_channels``
@@ -70,8 +69,9 @@ def compute_noise_gate_table(thresholds_db: List[float] | None = None,
     if hysteresis_db < 0:
         raise ValueError("compute_noise_gate_table: hysteresis_db must be >= 0")
 
-    bands = compute_channel_bands(n_channels=n_channels, fs=fs,
-                                  f_low=f_low, f_high=f_high)
+    bands = compute_channel_bands(
+        n_channels=n_channels, fs=fs, f_low=f_low, f_high=f_high
+    )
     centers = [math.sqrt(lo * hi) for lo, hi in bands]
 
     if thresholds_db is None:
@@ -104,8 +104,10 @@ def compute_noise_gate_table(thresholds_db: List[float] | None = None,
         "n_channels": n_channels,
         "hysteresis_db": hysteresis_db,
         "fs": fs,
-        "bands": [{"f_low": lo, "f_high": hi, "f_center": c}
-                  for (lo, hi), c in zip(bands, centers)],
+        "bands": [
+            {"f_low": lo, "f_high": hi, "f_center": c}
+            for (lo, hi), c in zip(bands, centers)
+        ],
         "open_db": opens,
         "close_db": closes,
     }
@@ -114,9 +116,9 @@ def compute_noise_gate_table(thresholds_db: List[float] | None = None,
 # ---------------------------------------------------------------------------
 # Envelope coefficients
 # ---------------------------------------------------------------------------
-def compute_gate_coefficients(attack_ms: float = 2.0,
-                              release_ms: float = 50.0,
-                              fs: float = FS) -> Tuple[int, int]:
+def compute_gate_coefficients(
+    attack_ms: float = 2.0, release_ms: float = 50.0, fs: float = FS
+) -> Tuple[int, int]:
     """Compute Q2.14 attack / release alphas for the noise-gate envelope.
 
     Same conversion as :func:`tools.profile_gen.gen_wdrc_tables.compute_envelope_coeffs`,
@@ -141,10 +143,9 @@ def compute_gate_coefficients(attack_ms: float = 2.0,
 # ---------------------------------------------------------------------------
 # Driver (optional convenience writer)
 # ---------------------------------------------------------------------------
-def write_gate_table(table: Dict[str, object],
-                     env_attack_q: int,
-                     env_release_q: int,
-                     out_dir: Path) -> List[Path]:
+def write_gate_table(
+    table: Dict[str, object], env_attack_q: int, env_release_q: int, out_dir: Path
+) -> List[Path]:
     """Write the noise-gate table to ``out_dir``.
 
     Produces:
@@ -169,17 +170,26 @@ def write_gate_table(table: Dict[str, object],
 
     # Envelope hex
     env_hex = out_dir / "noise_gate_envelope.hex"
-    write_hex([env_attack_q, env_release_q], env_hex,
-              header="Noise-gate envelope coefficients: attack, release (Q2.14)")
+    write_hex(
+        [env_attack_q, env_release_q],
+        env_hex,
+        header="Noise-gate envelope coefficients: attack, release (Q2.14)",
+    )
     written.append(env_hex)
 
     # Envelope text
     env_txt = out_dir / "noise_gate_envelope.txt"
     rows = [
-        {"name": "attack",  "alpha": env_attack_q,
-         "hex": f"{env_attack_q & 0xFFFF:04X}"},
-        {"name": "release", "alpha": env_release_q,
-         "hex": f"{env_release_q & 0xFFFF:04X}"},
+        {
+            "name": "attack",
+            "alpha": env_attack_q,
+            "hex": f"{env_attack_q & 0xFFFF:04X}",
+        },
+        {
+            "name": "release",
+            "alpha": env_release_q,
+            "hex": f"{env_release_q & 0xFFFF:04X}",
+        },
     ]
     write_txt_table(rows, env_txt, columns=["name", "alpha", "hex"])
     written.append(env_txt)
@@ -187,18 +197,19 @@ def write_gate_table(table: Dict[str, object],
     # Per-channel text
     ch_txt = out_dir / "noise_gate_channels.txt"
     rows = []
-    for i, (lo, hi) in enumerate([(b["f_low"], b["f_high"])
-                                  for b in table["bands"]]):
-        rows.append({
-            "channel": i,
-            "f_low": lo,
-            "f_high": hi,
-            "open_db":  table["open_db"][i],
-            "close_db": table["close_db"][i],
-        })
-    write_txt_table(rows, ch_txt,
-                    columns=["channel", "f_low", "f_high",
-                             "open_db", "close_db"])
+    for i, (lo, hi) in enumerate([(b["f_low"], b["f_high"]) for b in table["bands"]]):
+        rows.append(
+            {
+                "channel": i,
+                "f_low": lo,
+                "f_high": hi,
+                "open_db": table["open_db"][i],
+                "close_db": table["close_db"][i],
+            }
+        )
+    write_txt_table(
+        rows, ch_txt, columns=["channel", "f_low", "f_high", "open_db", "close_db"]
+    )
     written.append(ch_txt)
 
     return written
@@ -216,8 +227,12 @@ def main(argv: List[str] | None = None) -> int:
     p.add_argument("--attack-ms", type=float, default=2.0)
     p.add_argument("--release-ms", type=float, default=50.0)
     p.add_argument("--fs", type=float, default=FS)
-    p.add_argument("--thresholds", type=str, default=None,
-                   help="Optional comma-separated dB SPL values (one per channel)")
+    p.add_argument(
+        "--thresholds",
+        type=str,
+        default=None,
+        help="Optional comma-separated dB SPL values (one per channel)",
+    )
     p.add_argument("--out-dir", type=Path, default=Path("fpga/generated"))
     args = p.parse_args(argv)
 
@@ -226,14 +241,15 @@ def main(argv: List[str] | None = None) -> int:
         thresholds = [float(x) for x in args.thresholds.split(",")]
         if len(thresholds) != args.n_channels:
             raise SystemExit(
-                f"--thresholds has {len(thresholds)} values, "
-                f"expected {args.n_channels}"
+                f"--thresholds has {len(thresholds)} values, expected {args.n_channels}"
             )
 
-    print(f"Generating {args.n_channels}-channel noise-gate tables "
-          f"(hysteresis={args.hysteresis_db} dB, "
-          f"attack={args.attack_ms}ms, release={args.release_ms}ms) "
-          f"into {args.out_dir}...")
+    print(
+        f"Generating {args.n_channels}-channel noise-gate tables "
+        f"(hysteresis={args.hysteresis_db} dB, "
+        f"attack={args.attack_ms}ms, release={args.release_ms}ms) "
+        f"into {args.out_dir}..."
+    )
 
     table = compute_noise_gate_table(
         thresholds_db=thresholds,
@@ -241,17 +257,19 @@ def main(argv: List[str] | None = None) -> int:
         n_channels=args.n_channels,
         fs=args.fs,
     )
-    att_q, rel_q = compute_gate_coefficients(args.attack_ms,
-                                             args.release_ms,
-                                             args.fs)
+    att_q, rel_q = compute_gate_coefficients(args.attack_ms, args.release_ms, args.fs)
     table["attack_q2_14"] = int(att_q)
     table["release_q2_14"] = int(rel_q)
 
     written = write_gate_table(table, att_q, rel_q, args.out_dir)
     for p_ in written:
         print(f"  wrote {p_}")
-    print(f"  open  range: [{min(table['open_db']):.1f}, {max(table['open_db']):.1f}] dB")
-    print(f"  close range: [{min(table['close_db']):.1f}, {max(table['close_db']):.1f}] dB")
+    print(
+        f"  open  range: [{min(table['open_db']):.1f}, {max(table['open_db']):.1f}] dB"
+    )
+    print(
+        f"  close range: [{min(table['close_db']):.1f}, {max(table['close_db']):.1f}] dB"
+    )
     return 0
 
 

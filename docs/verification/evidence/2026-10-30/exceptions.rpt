@@ -1,0 +1,36 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2026 Advanced Micro Devices, Inc. All Rights Reserved.
+---------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2026.1 (win64) Build 6511674 Tue Jun 16 11:02:23 MDT 2026
+| Date         : Fri Oct 30 18:36:59 2026
+| Host         : Sohan_PC running 64-bit major release  (build 9200)
+| Command      : report_exceptions -file exceptions.rpt
+| Design       : top
+| Device       : 7s25-csga324
+| Speed File   : -1  PRODUCTION 1.23 2018-06-13
+| Design State : Routed
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+Exceptions Report
+
+Position  From                                                                              Through         To                                                                           Setup           Hold            Status           
+--------  --------------------------------------------------------------------------------  --------------  ---------------------------------------------------------------------------  --------------  --------------  -----------------
+15        *                                                                                 *               [get_ports {status_led_o status_clip_o led_rgb_r led_rgb_g led_rgb_b}]       false           false           
+16        [get_ports {btn_i[*]}]                                                            *               *                                                                            false           false           
+17        [get_cells -hierarchical -regexp {u_cdc_i2s_l/wr_ptr_gray_reg\[[0-9]+\]}]         *               [get_cells -hierarchical -regexp {u_cdc_i2s_l/wr_ptr_gray_a_reg\[[0-9]+\]}]  max_dpo=10      -               
+19        [get_cells -hierarchical -regexp {u_cdc_i2s_l/rd_ptr_gray_reg\[[0-9]+\]}]         *               [get_cells -hierarchical -regexp {u_cdc_i2s_l/rd_ptr_gray_a_reg\[[0-9]+\]}]  max_dpo=10      -               
+21        [get_pins -hierarchical -filter {NAME =~ u_cdc_i2s_l/mem_reg* && REF_PIN_NAME ==  *               [get_clocks -of_objects [get_pins {u_cdc_i2s_l/rd_ptr_bin_reg[0]/C}]]        max_dpo=10      -               
+           CLK}]                                                                                                                                                                                                         
+22        [get_cells -hierarchical -regexp {u_cdc_i2s_r/wr_ptr_gray_reg\[[0-9]+\]}]         *               [get_cells -hierarchical -regexp {u_cdc_i2s_r/wr_ptr_gray_a_reg\[[0-9]+\]}]  max_dpo=10      -               
+24        [get_cells -hierarchical -regexp {u_cdc_i2s_r/rd_ptr_gray_reg\[[0-9]+\]}]         *               [get_cells -hierarchical -regexp {u_cdc_i2s_r/rd_ptr_gray_a_reg\[[0-9]+\]}]  max_dpo=10      -               
+26        [get_pins -hierarchical -filter {NAME =~ u_cdc_i2s_r/mem_reg* && REF_PIN_NAME ==  *               [get_clocks -of_objects [get_pins {u_cdc_i2s_r/rd_ptr_bin_reg[0]/C}]]        max_dpo=10      -               
+           CLK}]                                                                                                                                                                                                         
+27        [get_cells -hierarchical -regexp {u_cdc_o2i_l/wr_ptr_gray_reg\[[0-9]+\]}]         *               [get_cells -hierarchical -regexp {u_cdc_o2i_l/wr_ptr_gray_a_reg\[[0-9]+\]}]  max_dpo=10      -               
+29        [get_cells -hierarchical -regexp {u_cdc_o2i_l/rd_ptr_gray_reg\[[0-9]+\]}]         *               [get_cells -hierarchical -regexp {u_cdc_o2i_l/rd_ptr_gray_a_reg\[[0-9]+\]}]  max_dpo=10      -               
+31        [get_pins -hierarchical -filter {NAME =~ u_cdc_o2i_l/mem_reg* && REF_PIN_NAME ==  *               [get_clocks -of_objects [get_pins {u_cdc_o2i_l/rd_ptr_bin_reg[0]/C}]]        max_dpo=10      -               
+           CLK}]                                                                                                                                                                                                         
+32        [get_cells -hierarchical -regexp {u_cdc_o2i_r/wr_ptr_gray_reg\[[0-9]+\]}]         *               [get_cells -hierarchical -regexp {u_cdc_o2i_r/wr_ptr_gray_a_reg\[[0-9]+\]}]  max_dpo=10      -               
+34        [get_cells -hierarchical -regexp {u_cdc_o2i_r/rd_ptr_gray_reg\[[0-9]+\]}]         *               [get_cells -hierarchical -regexp {u_cdc_o2i_r/rd_ptr_gray_a_reg\[[0-9]+\]}]  max_dpo=10      -               
+36        [get_pins -hierarchical -filter {NAME =~ u_cdc_o2i_r/mem_reg* && REF_PIN_NAME ==  *               [get_clocks -of_objects [get_pins {u_cdc_o2i_r/rd_ptr_bin_reg[0]/C}]]        max_dpo=10      -               
+           CLK}]                                                                                                                                                                                                         
+37        [get_cells rx_drop_sticky_reg]                                                    *               [get_cells rx_drop_meta_reg]                                                 max_dpo=10      -               
+

@@ -25,8 +25,8 @@ _TOOLS = _HERE.parent
 if str(_TOOLS) not in sys.path:
     sys.path.insert(0, str(_TOOLS))
 
-from common.constants import FS, Q_FRAC, Q_SCALE, Q_MIN, Q_MAX
-from common.fixed_point import float_to_q2_14, q2_14_to_float, saturate
+from common.constants import FS
+from common.fixed_point import float_to_q2_14, q2_14_to_float
 from common.formats import write_hex, write_coe, write_txt_table
 
 
@@ -43,26 +43,27 @@ def _window(n: int, kind: str) -> List[float]:
     if kind == "rect":
         return [1.0] * n
     if kind == "hamming":
-        return [0.54 - 0.46 * math.cos(2.0 * math.pi * i / (n - 1))
-                for i in range(n)]
+        return [0.54 - 0.46 * math.cos(2.0 * math.pi * i / (n - 1)) for i in range(n)]
     if kind == "hann":
-        return [0.5 - 0.5 * math.cos(2.0 * math.pi * i / (n - 1))
-               for i in range(n)]
+        return [0.5 - 0.5 * math.cos(2.0 * math.pi * i / (n - 1)) for i in range(n)]
     if kind == "blackman":
-        return [(0.42
-                 - 0.5 * math.cos(2.0 * math.pi * i / (n - 1))
-                 + 0.08 * math.cos(4.0 * math.pi * i / (n - 1)))
-                for i in range(n)]
+        return [
+            (
+                0.42
+                - 0.5 * math.cos(2.0 * math.pi * i / (n - 1))
+                + 0.08 * math.cos(4.0 * math.pi * i / (n - 1))
+            )
+            for i in range(n)
+        ]
     raise ValueError(f"_window: unknown kind {kind!r}")
 
 
 # ---------------------------------------------------------------------------
 # IIR Butterworth bandpass
 # ---------------------------------------------------------------------------
-def butter_bandpass(f_low: float,
-                    f_high: float,
-                    order: int = 4,
-                    fs: float = FS) -> Tuple[List[float], List[float]]:
+def butter_bandpass(
+    f_low: float, f_high: float, order: int = 4, fs: float = FS
+) -> Tuple[List[float], List[float]]:
     """Design a Butterworth bandpass IIR filter (biquad cascade flattened).
 
     Uses :func:`scipy.signal.butter` with the bilinear transform and
@@ -96,8 +97,7 @@ def butter_bandpass(f_low: float,
     """
     if f_low <= 0.0 or f_high <= f_low:
         raise ValueError(
-            f"butter_bandpass: need 0 < f_low < f_high "
-            f"(got {f_low}, {f_high})"
+            f"butter_bandpass: need 0 < f_low < f_high (got {f_low}, {f_high})"
         )
     if f_high >= fs / 2.0:
         raise ValueError(
@@ -109,14 +109,12 @@ def butter_bandpass(f_low: float,
 
     try:
         from scipy.signal import butter, sos2tf  # type: ignore
-    except Exception as exc:                                # pragma: no cover
+    except Exception as exc:  # pragma: no cover
         raise ImportError(
-            "butter_bandpass requires scipy.signal. "
-            "Install with: pip install scipy"
+            "butter_bandpass requires scipy.signal. Install with: pip install scipy"
         ) from exc
 
-    sos = butter(order, [f_low, f_high], btype="bandpass",
-                 fs=fs, output="sos")
+    sos = butter(order, [f_low, f_high], btype="bandpass", fs=fs, output="sos")
     b, a = sos2tf(sos)
     return [float(x) for x in b], [float(x) for x in a]
 
@@ -124,11 +122,13 @@ def butter_bandpass(f_low: float,
 # ---------------------------------------------------------------------------
 # FIR windowed-sinc bandpass
 # ---------------------------------------------------------------------------
-def fir_bandpass(f_low: float,
-                 f_high: float,
-                 n_taps: int = 64,
-                 window: str = "hamming",
-                 fs: float = FS) -> List[float]:
+def fir_bandpass(
+    f_low: float,
+    f_high: float,
+    n_taps: int = 64,
+    window: str = "hamming",
+    fs: float = FS,
+) -> List[float]:
     """Design a linear-phase FIR bandpass via the windowed-sinc method.
 
     The ideal bandpass impulse response is
@@ -171,8 +171,7 @@ def fir_bandpass(f_low: float,
         raise ValueError(f"fir_bandpass: n_taps must be >= 1 (got {n_taps})")
     if f_low <= 0.0 or f_high <= f_low:
         raise ValueError(
-            f"fir_bandpass: need 0 < f_low < f_high "
-            f"(got {f_low}, {f_high})"
+            f"fir_bandpass: need 0 < f_low < f_high (got {f_low}, {f_high})"
         )
     if f_high >= fs / 2.0:
         raise ValueError(
@@ -190,8 +189,9 @@ def fir_bandpass(f_low: float,
         if x == 0:
             h_n = f_high_n - f_low_n
         else:
-            h_n = (math.sin(math.pi * f_high_n * x)
-                   - math.sin(math.pi * f_low_n * x)) / (math.pi * x)
+            h_n = (
+                math.sin(math.pi * f_high_n * x) - math.sin(math.pi * f_low_n * x)
+            ) / (math.pi * x)
         h.append(h_n)
 
     win = _window(n_taps, window)
@@ -222,8 +222,7 @@ def quantize_coeffs(coeffs: List[float], width: int = 16) -> List[int]:
     """
     if width != 16:
         raise ValueError(
-            f"quantize_coeffs: only width=16 (Q2.14) is supported "
-            f"(got {width})"
+            f"quantize_coeffs: only width=16 (Q2.14) is supported (got {width})"
         )
     return [float_to_q2_14(c) for c in coeffs]
 
@@ -231,10 +230,9 @@ def quantize_coeffs(coeffs: List[float], width: int = 16) -> List[int]:
 # ---------------------------------------------------------------------------
 # Output helpers
 # ---------------------------------------------------------------------------
-def _write_outputs(coeffs: List[float],
-                   q: List[int],
-                   out_prefix: Path,
-                   label: str) -> List[Path]:
+def _write_outputs(
+    coeffs: List[float], q: List[int], out_prefix: Path, label: str
+) -> List[Path]:
     written: List[Path] = []
     p_hex = Path(str(out_prefix) + ".hex")
     write_hex(q, p_hex, header=f"{label} (Q2.14)")
@@ -245,8 +243,7 @@ def _write_outputs(coeffs: List[float],
     written.append(p_coe)
 
     rows = [
-        {"idx": i, "float": c, "q2_14": qi,
-         "hex": f"{(int(qi) & 0xFFFF):04X}"}
+        {"idx": i, "float": c, "q2_14": qi, "hex": f"{(int(qi) & 0xFFFF):04X}"}
         for i, (c, qi) in enumerate(zip(coeffs, q))
     ]
     p_txt = Path(str(out_prefix) + ".txt")
@@ -263,51 +260,78 @@ def main(argv: List[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         description="Filter coefficient generator (IIR Butterworth or FIR).",
     )
-    p.add_argument("--type", choices=("iir", "fir"), default="fir",
-                   help="Filter kind (default: %(default)s)")
-    p.add_argument("--f-low", type=float, required=True,
-                   help="Lower passband edge in Hz.")
-    p.add_argument("--f-high", type=float, required=True,
-                   help="Upper passband edge in Hz.")
-    p.add_argument("--order", type=int, default=4,
-                   help="IIR Butterworth order (default: %(default)s)")
-    p.add_argument("--taps", type=int, default=64,
-                   help="FIR number of taps (default: %(default)s)")
-    p.add_argument("--window", choices=("hamming", "hann", "blackman", "rect"),
-                   default="hamming",
-                   help="FIR window (default: %(default)s)")
-    p.add_argument("--fs", type=float, default=FS,
-                   help="Sample rate in Hz (default: %(default)s)")
-    p.add_argument("--out", type=Path, default=Path("filter_coeffs"),
-                   help="Output prefix (extensions .hex/.coe/.txt added).")
+    p.add_argument(
+        "--type",
+        choices=("iir", "fir"),
+        default="fir",
+        help="Filter kind (default: %(default)s)",
+    )
+    p.add_argument(
+        "--f-low", type=float, required=True, help="Lower passband edge in Hz."
+    )
+    p.add_argument(
+        "--f-high", type=float, required=True, help="Upper passband edge in Hz."
+    )
+    p.add_argument(
+        "--order",
+        type=int,
+        default=4,
+        help="IIR Butterworth order (default: %(default)s)",
+    )
+    p.add_argument(
+        "--taps", type=int, default=64, help="FIR number of taps (default: %(default)s)"
+    )
+    p.add_argument(
+        "--window",
+        choices=("hamming", "hann", "blackman", "rect"),
+        default="hamming",
+        help="FIR window (default: %(default)s)",
+    )
+    p.add_argument(
+        "--fs", type=float, default=FS, help="Sample rate in Hz (default: %(default)s)"
+    )
+    p.add_argument(
+        "--out",
+        type=Path,
+        default=Path("filter_coeffs"),
+        help="Output prefix (extensions .hex/.coe/.txt added).",
+    )
     args = p.parse_args(argv)
 
-    print(f"Designing {args.type.upper()} bandpass: "
-          f"{args.f_low:g}–{args.f_high:g} Hz @ {args.fs:g} Hz")
+    print(
+        f"Designing {args.type.upper()} bandpass: "
+        f"{args.f_low:g}–{args.f_high:g} Hz @ {args.fs:g} Hz"
+    )
 
     if args.type == "iir":
-        b, a = butter_bandpass(args.f_low, args.f_high,
-                               order=args.order, fs=args.fs)
+        b, a = butter_bandpass(args.f_low, args.f_high, order=args.order, fs=args.fs)
         # Concatenate b and a into a single flat table for the bitstream.
         coeffs = list(b) + list(a)
         q = quantize_coeffs(coeffs, width=16)
-        print(f"  b ({len(b)} taps): "
-              f"{[round(c, 6) for c in b]}")
-        print(f"  a ({len(a)} taps): "
-              f"{[round(c, 6) for c in a]}")
-        label = (f"IIR Butterworth BPF {args.f_low:g}-{args.f_high:g} Hz "
-                 f"order={args.order}")
+        print(f"  b ({len(b)} taps): {[round(c, 6) for c in b]}")
+        print(f"  a ({len(a)} taps): {[round(c, 6) for c in a]}")
+        label = (
+            f"IIR Butterworth BPF {args.f_low:g}-{args.f_high:g} Hz order={args.order}"
+        )
         written = _write_outputs(coeffs, q, args.out, label)
     else:
-        coeffs = fir_bandpass(args.f_low, args.f_high,
-                              n_taps=args.taps, window=args.window, fs=args.fs)
+        coeffs = fir_bandpass(
+            args.f_low, args.f_high, n_taps=args.taps, window=args.window, fs=args.fs
+        )
         q = quantize_coeffs(coeffs, width=16)
-        max_err = max(abs(q2_14_to_float(qi) - c)
-                      for qi, c in zip(q, coeffs)) if coeffs else 0.0
-        print(f"  {len(coeffs)} taps, window={args.window}, "
-              f"max quant error = {max_err:.3e}")
-        label = (f"FIR windowed-sinc BPF {args.f_low:g}-{args.f_high:g} Hz "
-                 f"taps={args.taps} window={args.window}")
+        max_err = (
+            max(abs(q2_14_to_float(qi) - c) for qi, c in zip(q, coeffs))
+            if coeffs
+            else 0.0
+        )
+        print(
+            f"  {len(coeffs)} taps, window={args.window}, "
+            f"max quant error = {max_err:.3e}"
+        )
+        label = (
+            f"FIR windowed-sinc BPF {args.f_low:g}-{args.f_high:g} Hz "
+            f"taps={args.taps} window={args.window}"
+        )
         written = _write_outputs(coeffs, q, args.out, label)
 
     print("Files written:")

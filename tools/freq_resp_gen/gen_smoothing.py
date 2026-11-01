@@ -26,16 +26,15 @@ _TOOLS = _HERE.parent
 if str(_TOOLS) not in sys.path:
     sys.path.insert(0, str(_TOOLS))
 
-from common.constants import FS, N_FFT, N_BINS
+from common.constants import FS, N_FFT
 
 
 # ---------------------------------------------------------------------------
 # Smoothing kernels
 # ---------------------------------------------------------------------------
-def smooth_fractional_octave(gains_db: List[float],
-                             fraction: int = 3,
-                             fs: float = FS,
-                             n_fft: int = N_FFT) -> List[float]:
+def smooth_fractional_octave(
+    gains_db: List[float], fraction: int = 3, fs: float = FS, n_fft: int = N_FFT
+) -> List[float]:
     """Smooth a per-bin gain curve using a fractional-octave kernel.
 
     For each bin ``k`` with center frequency ``f_k = k * fs / n_fft`` the
@@ -115,8 +114,7 @@ def smooth_fractional_octave(gains_db: List[float],
     return out
 
 
-def smooth_moving_average(gains_db: List[float],
-                          window_size: int = 5) -> List[float]:
+def smooth_moving_average(gains_db: List[float], window_size: int = 5) -> List[float]:
     """Boxcar (uniform) moving average of a gain curve.
 
     The window is centred on the current sample; for even ``window_size``
@@ -151,8 +149,7 @@ def smooth_moving_average(gains_db: List[float],
     return out
 
 
-def smooth_gaussian(gains_db: List[float],
-                    sigma_bins: float = 2.0) -> List[float]:
+def smooth_gaussian(gains_db: List[float], sigma_bins: float = 2.0) -> List[float]:
     """Gaussian-kernel smoothing of a gain curve.
 
     The kernel is ``g[j] = exp(-0.5 * (j/sigma_bins)^2)`` truncated to
@@ -163,13 +160,10 @@ def smooth_gaussian(gains_db: List[float],
     if n == 0:
         return []
     if sigma_bins <= 0:
-        raise ValueError(
-            f"smooth_gaussian: sigma_bins must be > 0 (got {sigma_bins})"
-        )
+        raise ValueError(f"smooth_gaussian: sigma_bins must be > 0 (got {sigma_bins})")
 
     half = max(1, int(math.ceil(3.0 * sigma_bins)))
-    kernel = [math.exp(-0.5 * (j / sigma_bins) ** 2)
-              for j in range(-half, half + 1)]
+    kernel = [math.exp(-0.5 * (j / sigma_bins) ** 2) for j in range(-half, half + 1)]
     ksum = sum(kernel)
     if ksum > 0:
         kernel = [k / ksum for k in kernel]
@@ -220,18 +214,39 @@ def _write_gain_file(path: Path, gains: List[float]) -> None:
 # ---------------------------------------------------------------------------
 def main(argv: List[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Gain-table smoothing.")
-    p.add_argument("--method", choices=("fractional", "moving", "gaussian"),
-                   default="fractional")
-    p.add_argument("--fraction", type=int, default=3,
-                   help="Fraction for fractional-octave smoothing (default: 3)")
-    p.add_argument("--window", type=int, default=5,
-                   help="Window size for moving-average smoothing (default: 5)")
-    p.add_argument("--sigma", type=float, default=2.0,
-                   help="Sigma (in bins) for Gaussian smoothing (default: 2.0)")
-    p.add_argument("--input-file", type=Path, required=True,
-                   help="Path to input gain file (one float per line).")
-    p.add_argument("--out", type=Path, default=None,
-                   help="Output file path (default: stdout table).")
+    p.add_argument(
+        "--method", choices=("fractional", "moving", "gaussian"), default="fractional"
+    )
+    p.add_argument(
+        "--fraction",
+        type=int,
+        default=3,
+        help="Fraction for fractional-octave smoothing (default: 3)",
+    )
+    p.add_argument(
+        "--window",
+        type=int,
+        default=5,
+        help="Window size for moving-average smoothing (default: 5)",
+    )
+    p.add_argument(
+        "--sigma",
+        type=float,
+        default=2.0,
+        help="Sigma (in bins) for Gaussian smoothing (default: 2.0)",
+    )
+    p.add_argument(
+        "--input-file",
+        type=Path,
+        required=True,
+        help="Path to input gain file (one float per line).",
+    )
+    p.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="Output file path (default: stdout table).",
+    )
     args = p.parse_args(argv)
 
     gains = _read_gain_file(args.input_file)
@@ -243,13 +258,12 @@ def main(argv: List[str] | None = None) -> int:
         out = smooth_fractional_octave(gains, fraction=args.fraction)
     elif args.method == "moving":
         out = smooth_moving_average(gains, window_size=args.window)
-    else:                                            # gaussian
+    else:  # gaussian
         out = smooth_gaussian(gains, sigma_bins=args.sigma)
 
     # Quick numeric summary.
     n = min(16, len(out))
-    print(f"First {n} smoothed values: "
-          f"{[round(g, 3) for g in out[:n]]}")
+    print(f"First {n} smoothed values: {[round(g, 3) for g in out[:n]]}")
 
     if args.out is not None:
         _write_gain_file(args.out, out)

@@ -40,8 +40,8 @@ module status_mon import auris_pkg::*; #(
     // The counter width must be wide enough to hold HALF_PERIOD.
     // For CLK_FREQ_HZ=96 MHz and HEARTBEAT_HZ=1, HALF_PERIOD=48_000_000
     // which needs 26 bits.  We use 28 bits to give headroom.
-    localparam int unsigned HALF_PERIOD = CLK_FREQ_HZ / (2 * HEARTBEAT_HZ);
-    localparam int unsigned HB_CNT_W    = $clog2(HALF_PERIOD + 1);
+    localparam int unsigned HALF_PERIOD = (HEARTBEAT_HZ == 0) ? 1 : CLK_FREQ_HZ / (2 * HEARTBEAT_HZ);
+    localparam int unsigned HB_CNT_W    = (HALF_PERIOD < 1) ? 1 : $clog2(HALF_PERIOD + 1);
 
     logic [HB_CNT_W-1:0] hb_cnt;
 
@@ -80,8 +80,8 @@ module status_mon import auris_pkg::*; #(
     // Synthesis-time sanity
     // -------------------------------------------------------------------------
     initial begin
-        if (HEARTBEAT_HZ == 0)
-            $display("ERROR: status_mon HEARTBEAT_HZ=0 is illegal");
+        if (HEARTBEAT_HZ == 0 || CLK_FREQ_HZ == 0 || HALF_PERIOD < 1)
+            $fatal(1, "status_mon requires positive clock/heartbeat and HALF_PERIOD >= 1");
     end
 
 endmodule : status_mon

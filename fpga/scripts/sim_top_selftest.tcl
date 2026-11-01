@@ -34,12 +34,12 @@ set tb_path [file join $sim_tb_dir tb_top_selftest.sv]
 if {![file exists $tb_path]} {
     puts "ERROR: testbench not found: $tb_path"
     close_project
-    return 1
+    error "Simulation setup failed"
 }
 add_files -fileset sim_1 $tb_path
 
 # Generate FFT/IFFT simulation targets used under top->dsp_pipeline.
-set ip_dir [file normalize "${script_dir}/../ip"]
+set ip_dir [file join $work_dir ip]
 file mkdir $ip_dir
 
 set xfft_cfg [list \
@@ -82,12 +82,9 @@ update_compile_order -fileset sources_1
 update_compile_order -fileset sim_1
 
 puts "Launching xsim ..."
-launch_simulation
+source [file join $script_dir simulation_common.tcl]
+auris_run_simulation /tb_top_selftest/test_done {15 ms}
 
-puts "Running 15 ms ..."
-run 15 ms
-
-close_sim -force
 close_project
 
 puts "============================================================"

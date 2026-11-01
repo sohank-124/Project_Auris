@@ -59,14 +59,14 @@ if {![file exists $tb_path]} {
     puts "ERROR: testbench not found: $tb_path"
     puts "Create fpga/sim/testbenches/tb_dsp_pipeline.sv before running this script."
     close_project
-    return 1
+    error "Simulation setup failed"
 }
 add_files -fileset sim_1 $tb_path
 
 # ---------------------------------------------------------------------------
 # 3. Generate FFT/IFFT IP cores needed by dsp_pipeline
 # ---------------------------------------------------------------------------
-set ip_dir [file normalize "${script_dir}/../ip"]
+set ip_dir [file join $work_dir ip]
 file mkdir $ip_dir
 
 set xfft_cfg [list \
@@ -119,16 +119,9 @@ update_compile_order -fileset sim_1
 # 5. Launch and run
 # ---------------------------------------------------------------------------
 puts "Launching xsim ..."
-launch_simulation
+source [file join $script_dir simulation_common.tcl]
+auris_run_simulation /tb_dsp_pipeline/test_done {11 ms}
 
-# 8 ms of simulated time = enough for pipeline fill + output drain
-puts "Running 8 ms ..."
-run 8 ms
-
-# ---------------------------------------------------------------------------
-# 6. Tear down
-# ---------------------------------------------------------------------------
-close_sim -force
 close_project
 
 puts "============================================================"

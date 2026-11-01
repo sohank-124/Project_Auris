@@ -2,23 +2,23 @@
 // File:        tb_btn_debounce.sv
 // Project:     Project Auris
 // Module:      tb_btn_debounce
-// Description: Self-checking testbench for the 4-button active-low debouncer
+// Description: Self-checking testbench for the 4-button active-high debouncer
 //              (btn_debounce). Verifies:
 //
 //                1. Bounce rejection: rapid toggling of btn_i for intervals
 //                   strictly shorter than DEBOUNCE_MS produces ZERO
 //                   btn_press_pulse_o pulses (no false triggers).
-//                2. Stable press: holding btn_i low for strictly more than
+//                2. Stable press: holding btn_i high for strictly more than
 //                   DEBOUNCE_MS produces EXACTLY ONE btn_press_pulse_o
 //                   pulse (single-cycle, on the leading edge of the
 //                   debounced state).
-//                3. Release: returning btn_i to high after a stable press
+//                3. Release: returning btn_i to low after a stable press
 //                   produces EXACTLY ONE btn_release_pulse_o pulse (single
 //                   cycle, on the trailing edge of the debounced state).
 //                4. Independence: all 4 buttons (BTN0..BTN3) can be
 //                   debounced concurrently without crosstalk.
-//                5. Active-low polarity: btn_pressed_o is asserted exactly
-//                   while btn_i is low, after the debounce interval
+//                5. Active-high polarity: btn_pressed_o is asserted exactly
+//                   while btn_i is high, after the debounce interval
 //                   has elapsed.
 //
 //              The DUT is parameterized so the testbench uses a slow
@@ -34,6 +34,7 @@
 `timescale 1ns/1ps
 
 module tb_btn_debounce;
+    logic test_done = 1'b0;
     import auris_pkg::*;
 
     // -------------------------------------------------------------------------
@@ -50,7 +51,7 @@ module tb_btn_debounce;
     // -------------------------------------------------------------------------
     logic                          clk;
     logic                          rst_n;
-    logic [TB_NUM_BUTTONS-1:0]     btn;          // active-low raw input
+    logic [TB_NUM_BUTTONS-1:0]     btn;          // active-high raw input
     logic [TB_NUM_BUTTONS-1:0]     btn_pressed;  // active-high debounced state
     logic [TB_NUM_BUTTONS-1:0]     press_pulse;  // 1-cycle pulse on press
     logic [TB_NUM_BUTTONS-1:0]     release_pulse;// 1-cycle pulse on release
@@ -161,7 +162,7 @@ module tb_btn_debounce;
     initial begin
         // ---- Reset --------------------------------------------------------
         rst_n = 1'b0;
-        btn   = {TB_NUM_BUTTONS{1'b1}};   // all released (active-low)
+        btn   = {TB_NUM_BUTTONS{1'b0}};   // all released (active-high)
         for (int i = 0; i < TB_NUM_BUTTONS; i++) begin
             press_count[i]   = 0;
             release_count[i] = 0;
@@ -180,8 +181,8 @@ module tb_btn_debounce;
         $display("\n=== Test 1: Bounce rejection on BTN0 (toggle every 1 ms < 20 ms) ===");
         reset_pulse_counters();
         for (int i = 0; i < 50; i++) begin
-            drive_btn(4'b1110, 1000);  // BTN0 low for 1 ms
-            drive_btn(4'b1111, 1000);  // BTN0 high for 1 ms
+            drive_btn(4'b0001, 1000);  // BTN0 pressed for 1 ms
+            drive_btn(4'b0000, 1000);  // BTN0 released for 1 ms
         end
         // Wait a few extra cycles to let any spurious pulse settle
         repeat (100) @(posedge clk);
@@ -191,11 +192,11 @@ module tb_btn_debounce;
 
         // =====================================================================
         // Test 2: Stable press on BTN0
-        // Hold BTN0 low for > 20 ms. Expected: press_count[0] == 1.
+        // Hold BTN0 high for > 20 ms. Expected: press_count[0] == 1.
         // =====================================================================
-        $display("\n=== Test 2: Stable press on BTN0 (hold low for 25 ms > 20 ms) ===");
+        $display("\n=== Test 2: Stable press on BTN0 (hold high for 25 ms > 20 ms) ===");
         reset_pulse_counters();
-        drive_btn(4'b1110, 25_000);  // 25 ms < 25,000 cycles
+        drive_btn(4'b0001, 25_000);  // 25 ms < 25,000 cycles
         // Wait a few cycles for the debounce FSM to assert the pulse
         repeat (100) @(posedge clk);
         check(press_count[0] == 1,
@@ -208,11 +209,11 @@ module tb_btn_debounce;
 
         // =====================================================================
         // Test 3: Release of BTN0
-        // Bring BTN0 back high for > 20 ms. Expected: release_count[0] == 1.
+        // Bring BTN0 back low for > 20 ms. Expected: release_count[0] == 1.
         // =====================================================================
-        $display("\n=== Test 3: Release of BTN0 (hold high for 25 ms) ===");
+        $display("\n=== Test 3: Release of BTN0 (hold low for 25 ms) ===");
         reset_pulse_counters();
-        drive_btn(4'b1111, 25_000);
+        drive_btn(4'b0000, 25_000);
         repeat (100) @(posedge clk);
         check(release_count[0] == 1,
               "Test3-ReleaseBTN0",
@@ -231,7 +232,7 @@ module tb_btn_debounce;
         reset_pulse_counters();
 
         // Phase A: press all 4 buttons (hold for 25 ms)
-        drive_btn(4'b0000, 25_000);
+        drive_btn(4'b1111, 25_000);
         repeat (100) @(posedge clk);
 
         // Verify 1 press per button, 0 release per button
@@ -248,7 +249,7 @@ module tb_btn_debounce;
         end
 
         // Phase B: release all 4 buttons (hold for 25 ms)
-        drive_btn(4'b1111, 25_000);
+        drive_btn(4'b0000, 25_000);
         repeat (100) @(posedge clk);
 
         // Verify 1 release per button
@@ -270,8 +271,8 @@ module tb_btn_debounce;
         reset_pulse_counters();
         // BTN1 bounces for 50 ms (25 transitions, alternating every 1 ms)
         for (int i = 0; i < 25; i++) begin
-            drive_btn(4'b1110, 1000);  // BTN0 held low (pressed), others released
-            drive_btn(4'b1100, 1000);  // BTN0 low + BTN1 bouncing
+            drive_btn(4'b0001, 1000);  // BTN0 held low (pressed), others released
+            drive_btn(4'b0011, 1000);  // BTN0 low + BTN1 bouncing
         end
         // After 50 ms BTN0 should have been pressed (~30 ms ago > 20 ms),
         // BTN1 should still be 0 (bouncing never settled).
@@ -292,12 +293,12 @@ module tb_btn_debounce;
         // Ensure BTN0 starts RELEASED (Test 5 left it pressed) so every
         // press below is a genuine new edge. Reset counters AFTER this
         // hold so the release edge it generates is not counted.
-        drive_btn(4'b1111, 25_000);
+        drive_btn(4'b0000, 25_000);
         reset_pulse_counters();
         // 3 press/release cycles
         for (int cyc = 0; cyc < 3; cyc++) begin
-            drive_btn(4'b1110, 25_000);  // press
-            drive_btn(4'b1111, 25_000);  // release
+            drive_btn(4'b0001, 25_000);  // press
+            drive_btn(4'b0000, 25_000);  // release
         end
         repeat (200) @(posedge clk);
         check(press_count[0] == 3,
@@ -308,19 +309,19 @@ module tb_btn_debounce;
               $sformatf(": release_count[0]=%0d (expected 3)", release_count[0]));
 
         // =====================================================================
-        // Test 7: Active-low polarity
-        // The DUT must invert: btn_pressed_o[i] = 1 iff btn_i[i] = 0
+        // Test 7: Active-high polarity
+        // The DUT preserves polarity: btn_pressed_o[i] = 1 iff btn_i[i] = 1
         // (after debounce). Verify the steady-state mapping.
         // =====================================================================
-        $display("\n=== Test 7: Active-low polarity (btn_pressed == ~btn after debounce) ===");
+        $display("\n=== Test 7: Active-high polarity (btn_pressed == btn after debounce) ===");
         reset_pulse_counters();
         // Drive an alternating pattern and let the debouncer settle
-        drive_btn(4'b0101, 25_000);   // BTN1, BTN3 low
+        drive_btn(4'b1010, 25_000);   // BTN1, BTN3 high
         repeat (100) @(posedge clk);
         check(btn_pressed[0] == 1'b0 && btn_pressed[1] == 1'b1 &&
               btn_pressed[2] == 1'b0 && btn_pressed[3] == 1'b1,
-              "Test7-ActiveLowPolarity",
-              $sformatf(": btn_pressed=%b (expected 0101)", btn_pressed));
+              "Test7-ActiveHighPolarity",
+              $sformatf(": btn_pressed=%b (expected 1010)", btn_pressed));
 
         // =====================================================================
         // Test 8: Reset behaviour
@@ -328,7 +329,7 @@ module tb_btn_debounce;
         // =====================================================================
         $display("\n=== Test 8: Reset behaviour (btn_pressed returns to 0) ===");
         rst_n = 1'b0;
-        btn   = {TB_NUM_BUTTONS{1'b1}};
+        btn   = {TB_NUM_BUTTONS{1'b0}};
         repeat (20) @(posedge clk);
         check(btn_pressed == {TB_NUM_BUTTONS{1'b0}},
               "Test8-ResetClearsBtnPressed",
@@ -343,7 +344,8 @@ module tb_btn_debounce;
         $display("\n=== tb_btn_debounce Summary ===");
         $display("Total: %0d  Pass: %0d  Fail: %0d", total_count, pass_count, fail_count);
         if (fail_count == 0) $display("ALL TESTS PASSED");
-        else                 $display("SOME TESTS FAILED");
+        else                 $fatal(1, "SOME TESTS FAILED");
+        test_done = 1'b1;
         $finish;
     end
 
@@ -353,7 +355,7 @@ module tb_btn_debounce;
     initial begin
         #600_000_000;  // 600 ms
         $display("[%0t] TIMEOUT in tb_btn_debounce", $time);
-        $finish;
+        $fatal(1, "Testbench timeout");
     end
 
 endmodule : tb_btn_debounce

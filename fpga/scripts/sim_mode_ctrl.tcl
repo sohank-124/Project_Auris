@@ -63,17 +63,9 @@ update_compile_order -fileset sim_1
 # 4. Launch and run
 # ---------------------------------------------------------------------------
 puts "Launching xsim ..."
-launch_simulation
+source [file join $script_dir simulation_common.tcl]
+auris_run_simulation /tb_mode_ctrl/test_done {500 us}
 
-# 100 us at 96 MHz = 9600 cycles, plenty for multiple mode changes and
-# to clock 128 gain-table entries through the SPI loader.
-puts "Running 500 us ..."
-run 500 us
-
-# ---------------------------------------------------------------------------
-# 5. Tear down
-# ---------------------------------------------------------------------------
-close_sim -force
 close_project
 
 puts "============================================================"

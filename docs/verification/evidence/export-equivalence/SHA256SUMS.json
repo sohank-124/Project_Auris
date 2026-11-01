@@ -1,0 +1,10 @@
+{
+  "check_exports.py": "72d8282bc6f6a919dcc6cc4b32d0c2d58ff158287a02ac3756d29a44b538a810",
+  "comparison.txt": "20fd5bccaca93008a4c12396143662be6dcde1b3f1ab1540106a1737e798c574",
+  "hann_comparison.csv": "0a9d070628835abc48d0c6c87f5199ccebdbf76ed51cc6b448f7017798439187",
+  "mode_comparison.csv": "88678d971d34e427a3961e36f9fa8d4aa573dd239765ee00c6eede0a7e126e0f",
+  "README.md": "1fe7db240effa1c626a835c235b8bcb99a243e759862b496bfd239513ba1e4e3",
+  "source_sha256.json": "48389595f4ad848b759583f9d4d3dcec8268379d3da4eb1bf4af842f9d4fad82",
+  "tb_f30_rom.sv": "e3835a420e3546702457dd50431d2e9d86e6e16f576f02643d618708419a396e",
+  "verify_rom.tcl": "5449d205b9a0ab310e621fbabb7cf36b3a48cf99c6512071012adf1ccfcecead"
+}

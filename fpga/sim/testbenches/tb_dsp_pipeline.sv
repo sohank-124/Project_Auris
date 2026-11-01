@@ -1,3 +1,4 @@
+// Smoke coverage only; tb_pipeline_reconstruction supplies numerical acceptance.
 // =============================================================================
 // File:        tb_dsp_pipeline.sv
 // Project:     Project Auris
@@ -9,6 +10,7 @@
 `timescale 1ns/1ps
 
 module tb_dsp_pipeline;
+    logic test_done = 1'b0;
     import auris_pkg::*;
 
     // -------------------------------------------------------------------------
@@ -266,7 +268,8 @@ module tb_dsp_pipeline;
         $display("\n=== tb_dsp_pipeline Summary ===");
         $display("Total: %0d  Pass: %0d  Fail: %0d", total_count, pass_count, fail_count);
         if (fail_count == 0) $display("ALL TESTS PASSED");
-        else                 $display("SOME TESTS FAILED");
+        else                 $fatal(1, "SOME TESTS FAILED");
+        test_done = 1'b1;
         $finish;
     end
 
@@ -276,7 +279,7 @@ module tb_dsp_pipeline;
     initial begin
         #10_000_000;
         $display("[%0t] TIMEOUT in tb_dsp_pipeline", $time);
-        $finish;
+        $fatal(1, "Testbench timeout");
     end
 
 endmodule : tb_dsp_pipeline

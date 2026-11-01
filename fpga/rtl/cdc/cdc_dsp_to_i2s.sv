@@ -45,8 +45,8 @@ module cdc_dsp_to_i2s import auris_pkg::*; #(
     // Sanity: DEPTH must be a power of two and AW must match.
     // -------------------------------------------------------------------------
     initial begin
-        if ((1 << AW) != DEPTH) begin
-            $display("ERROR: cdc_dsp_to_i2s AW=%0d does not match DEPTH=%0d", AW, DEPTH);
+        if (DEPTH < 2 || (1 << AW) != DEPTH) begin
+            $fatal(1, "ERROR: cdc_dsp_to_i2s AW=%0d does not match DEPTH=%0d", AW, DEPTH);
         end
     end
 
@@ -78,8 +78,10 @@ module cdc_dsp_to_i2s import auris_pkg::*; #(
     // Empty / full comparators
     // -------------------------------------------------------------------------
     wire rd_empty     = (rd_ptr_gray == wr_ptr_gray_b);
-    wire wr_full_raw  = (wr_ptr_gray == { ~rd_ptr_gray_b[PW-1:PW-2],
-                                           rd_ptr_gray_b[PW-3:0] });
+    wire wr_full_raw  = (wr_ptr_gray == (rd_ptr_gray_b ^ (PW'(3) << (PW-2))));
+
+    wire [PW-1:0] wr_next = wr_ptr_bin + ((wr_en_i && !wr_full_raw) ? 1'b1 : 1'b0);
+    wire [PW-1:0] rd_next = rd_ptr_bin + ((rd_en_i && !rd_empty) ? 1'b1 : 1'b0);
 
     assign wr_full_o  = !wr_rst_n_i | wr_full_raw;
     assign rd_empty_o = rd_empty;
@@ -97,7 +99,7 @@ module cdc_dsp_to_i2s import auris_pkg::*; #(
             if (wr_en_i && !wr_full_raw) begin
                 wr_ptr_bin <= wr_ptr_bin + 1'b1;
             end
-            wr_ptr_gray   <= wr_ptr_bin ^ (wr_ptr_bin >> 1);
+            wr_ptr_gray <= wr_next ^ (wr_next >> 1);
             rd_ptr_gray_a <= rd_ptr_gray;
             rd_ptr_gray_b <= rd_ptr_gray_a;
         end
@@ -107,7 +109,7 @@ module cdc_dsp_to_i2s import auris_pkg::*; #(
     // Write port: synchronous RAM write
     // -------------------------------------------------------------------------
     always_ff @(posedge wr_clk_i) begin
-        if (wr_en_i && !wr_full_raw) begin
+        if (wr_rst_n_i && wr_en_i && !wr_full_raw) begin
             mem[wr_ptr_bin[AW-1:0]] <= wr_data_i;
         end
     end
@@ -125,7 +127,7 @@ module cdc_dsp_to_i2s import auris_pkg::*; #(
             if (rd_en_i && !rd_empty) begin
                 rd_ptr_bin <= rd_ptr_bin + 1'b1;
             end
-            rd_ptr_gray   <= rd_ptr_bin ^ (rd_ptr_bin >> 1);
+            rd_ptr_gray <= rd_next ^ (rd_next >> 1);
             wr_ptr_gray_a <= wr_ptr_gray;
             wr_ptr_gray_b <= wr_ptr_gray_a;
         end
@@ -137,14 +139,9 @@ module cdc_dsp_to_i2s import auris_pkg::*; #(
     assign rd_data_o = mem[rd_ptr_bin[AW-1:0]];
 
     // -------------------------------------------------------------------------
-    // Read valid: 1-cycle pulse when rd_en_i and !rd_empty
-    // -------------------------------------------------------------------------
-    logic rd_valid_r;
-    always_ff @(posedge rd_clk_i or negedge rd_rst_n_i) begin
-        if (!rd_rst_n_i) rd_valid_r <= 1'b0;
-        else             rd_valid_r <= rd_en_i & ~rd_empty;
-    end
-    assign rd_valid_o = rd_valid_r;
+    // First-word fall-through contract: valid qualifies the visible head.
+    // The consumer captures that head on rd_en_i && rd_valid_o.
+    assign rd_valid_o = rd_rst_n_i && !rd_empty;
 
 endmodule : cdc_dsp_to_i2s
 

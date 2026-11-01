@@ -24,7 +24,6 @@ This module provides:
 from __future__ import annotations
 
 import argparse
-import json
 import math
 import re
 import sys
@@ -81,10 +80,12 @@ def compare_hex_files(file_a: Path, file_b: Path) -> Tuple[bool, int, List[int]]
     if not file_b.exists():
         return (False, 0, [-1])
 
-    with open(file_a, "r", encoding="utf-8", errors="replace") as fa, \
-         open(file_b, "r", encoding="utf-8", errors="replace") as fb:
-        la = [_normalise_hex_line(l) for l in fa]
-        lb = [_normalise_hex_line(l) for l in fb]
+    with (
+        open(file_a, "r", encoding="utf-8", errors="replace") as fa,
+        open(file_b, "r", encoding="utf-8", errors="replace") as fb,
+    ):
+        la = [_normalise_hex_line(line) for line in fa]
+        lb = [_normalise_hex_line(line) for line in fb]
 
     # Drop empty lines.
     la = [x for x in la if x]
@@ -104,20 +105,27 @@ def compare_hex_files(file_a: Path, file_b: Path) -> Tuple[bool, int, List[int]]
 # ---------------------------------------------------------------------------
 # Float array comparison
 # ---------------------------------------------------------------------------
-def compare_float_arrays(a: Sequence[float],
-                         b: Sequence[float],
-                         tol: float = 1e-6
-                         ) -> Tuple[bool, float, List[int]]:
+def compare_float_arrays(
+    a: Sequence[float], b: Sequence[float], tol: float = 1e-6
+) -> Tuple[bool, float, List[int]]:
     """Element-wise comparison of two float arrays.
 
     Returns ``(equal, max_abs_error, diff_indices)``.  ``max_abs_error``
     is the largest absolute element-wise difference.
     """
+    if not math.isfinite(tol) or tol < 0:
+        raise ValueError("tol must be finite and nonnegative")
+    if not len(a) or not len(b):
+        return (False, float("inf"), [-1])
     n = min(len(a), len(b))
     diffs: List[int] = []
     max_err = 0.0
     for i in range(n):
-        e = abs(float(a[i]) - float(b[i]))
+        e = (
+            abs(float(a[i]) - float(b[i]))
+            if math.isfinite(float(a[i])) and math.isfinite(float(b[i]))
+            else float("inf")
+        )
         if e > tol:
             diffs.append(i)
         if e > max_err:
@@ -130,9 +138,9 @@ def compare_float_arrays(a: Sequence[float],
 # ---------------------------------------------------------------------------
 # Human-readable diff
 # ---------------------------------------------------------------------------
-def generate_diff_report(a: Sequence, b: Sequence,
-                         labels: Tuple[str, str] = ("A", "B"),
-                         max_rows: int = 50) -> str:
+def generate_diff_report(
+    a: Sequence, b: Sequence, labels: Tuple[str, str] = ("A", "B"), max_rows: int = 50
+) -> str:
     """Return a small text diff between two sequences.
 
     The report shows the index, both values, and the absolute
@@ -164,10 +172,12 @@ def generate_diff_report(a: Sequence, b: Sequence,
 # ---------------------------------------------------------------------------
 # Directory-level regression
 # ---------------------------------------------------------------------------
-def regression_test(reference_dir: Path,
-                    test_dir: Path,
-                    extensions: Sequence[str] = (".hex",),
-                    tol: float = 1e-6) -> Dict:
+def regression_test(
+    reference_dir: Path,
+    test_dir: Path,
+    extensions: Sequence[str] = (".hex",),
+    tol: float = 1e-6,
+) -> Dict:
     """Compare every file in ``reference_dir`` against ``test_dir``.
 
     Files whose extension is not in ``extensions`` are skipped.  The
@@ -176,17 +186,21 @@ def regression_test(reference_dir: Path,
     reference_dir = Path(reference_dir)
     test_dir = Path(test_dir)
     if not reference_dir.exists():
-        return {"reference_dir": str(reference_dir),
-                "test_dir": str(test_dir),
-                "ok": False,
-                "error": "reference directory does not exist",
-                "files": []}
+        return {
+            "reference_dir": str(reference_dir),
+            "test_dir": str(test_dir),
+            "ok": False,
+            "error": "reference directory does not exist",
+            "files": [],
+        }
     if not test_dir.exists():
-        return {"reference_dir": str(reference_dir),
-                "test_dir": str(test_dir),
-                "ok": False,
-                "error": "test directory does not exist",
-                "files": []}
+        return {
+            "reference_dir": str(reference_dir),
+            "test_dir": str(test_dir),
+            "ok": False,
+            "error": "test directory does not exist",
+            "files": [],
+        }
 
     files: List[Dict] = []
     for ref in sorted(reference_dir.iterdir()):
@@ -196,16 +210,18 @@ def regression_test(reference_dir: Path,
             continue
         test = test_dir / ref.name
         equal, n_compared, diffs = compare_hex_files(ref, test)
-        files.append({
-            "name": ref.name,
-            "ref_path": str(ref),
-            "test_path": str(test),
-            "exists_in_test": test.exists(),
-            "equal": bool(equal),
-            "n_compared": n_compared,
-            "n_diff": len(diffs),
-            "diff_indices": diffs[:32],      # truncate for brevity
-        })
+        files.append(
+            {
+                "name": ref.name,
+                "ref_path": str(ref),
+                "test_path": str(test),
+                "exists_in_test": test.exists(),
+                "equal": bool(equal),
+                "n_compared": n_compared,
+                "n_diff": len(diffs),
+                "diff_indices": diffs[:32],  # truncate for brevity
+            }
+        )
     n_total = len(files)
     n_ok = sum(1 for f in files if f["equal"])
     return {
@@ -229,23 +245,30 @@ def main(argv: List[str] | None = None) -> int:
     )
     p.add_argument("--reference-dir", type=Path, required=True)
     p.add_argument("--test-dir", type=Path, required=True)
-    p.add_argument("--extensions", nargs="*",
-                   default=[".hex"],
-                   help="File extensions to compare (default: .hex).")
-    p.add_argument("--out", type=Path, default=None,
-                   help="Optional JSON report output.")
+    p.add_argument(
+        "--extensions",
+        nargs="*",
+        default=[".hex"],
+        help="File extensions to compare (default: .hex).",
+    )
+    p.add_argument(
+        "--out", type=Path, default=None, help="Optional JSON report output."
+    )
     args = p.parse_args(argv)
 
-    report = regression_test(args.reference_dir, args.test_dir,
-                             extensions=tuple(args.extensions))
+    report = regression_test(
+        args.reference_dir, args.test_dir, extensions=tuple(args.extensions)
+    )
     print(f"Regression test: {args.reference_dir} vs {args.test_dir}")
     print(f"  files        = {report['n_files']}")
     print(f"  OK           = {report['n_ok']}")
     print(f"  failed       = {report['n_failed']}")
     for f in report["files"]:
         status = "PASS" if f["equal"] else "FAIL"
-        print(f"  [{status}] {f['name']:30s} "
-              f"n={f['n_compared']:5d}  diff={f['n_diff']:4d}")
+        print(
+            f"  [{status}] {f['name']:30s} "
+            f"n={f['n_compared']:5d}  diff={f['n_diff']:4d}"
+        )
     if args.out is not None:
         write_json(report, args.out)
         print(f"Wrote {args.out}")

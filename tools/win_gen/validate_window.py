@@ -9,16 +9,13 @@ DSP pipeline (50% overlap, N_FFT/2 hop).
 
 from __future__ import annotations
 
-import math
 from typing import Dict, List, Tuple
 
 
 # ---------------------------------------------------------------------------
 # Individual checks
 # ---------------------------------------------------------------------------
-def check_cola(w: List[float],
-               hop: int = 128,
-               tol: float = 1e-6) -> Tuple[bool, float]:
+def check_cola(w: List[float], hop: int = 128, tol: float = 1e-6) -> Tuple[bool, float]:
     """Constant-Overlap-Add check.
 
     Simulates an overlap-add of the window with itself at the given
@@ -45,9 +42,7 @@ def check_cola(w: List[float],
     if hop <= 0:
         raise ValueError(f"check_cola: hop must be positive (got {hop})")
     if n < hop:
-        raise ValueError(
-            f"check_cola: window length ({n}) must be >= hop ({hop})"
-        )
+        raise ValueError(f"check_cola: window length ({n}) must be >= hop ({hop})")
 
     # The OLA sum, computed for each output sample in the "steady-state"
     # region (i.e. after the first and last hops have contributed).
@@ -71,8 +66,7 @@ def check_cola(w: List[float],
     return (passed, deviation)
 
 
-def check_symmetry(w: List[float],
-                   tol: float = 1e-9) -> Tuple[bool, float]:
+def check_symmetry(w: List[float], tol: float = 1e-9) -> Tuple[bool, float]:
     """Verify ``w`` is symmetric (linear-phase) about its centre.
 
     Returns
@@ -93,9 +87,9 @@ def check_symmetry(w: List[float],
     return (dev <= tol, float(dev))
 
 
-def check_dc_response(w: List[float],
-                      expected: float | None = None
-                      ) -> Tuple[bool, float]:
+def check_dc_response(
+    w: List[float], expected: float | None = None
+) -> Tuple[bool, float]:
     """Check the DC (sum) response of the window.
 
     The DC response of an N-point window is ``sum(w)/N``.  For a
@@ -128,9 +122,9 @@ def check_dc_response(w: List[float],
     return (abs(dc - expected) <= 1e-6, float(dc))
 
 
-def check_energy(w: List[float],
-                 expected_enbw: float = 1.5,
-                 tol: float = 0.01) -> Tuple[bool, float]:
+def check_energy(
+    w: List[float], expected_enbw: float = 1.5, tol: float = 0.01
+) -> Tuple[bool, float]:
     """Check the Equivalent Noise BandWidth (ENBW) of the window.
 
     The Hann window's analytic ENBW is exactly 1.5 bins; this check
@@ -186,18 +180,25 @@ def validate_all(w: List[float], hop: int = 128) -> Dict[str, object]:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
-def _cli() -> int:                  # pragma: no cover
+def _cli() -> int:  # pragma: no cover
     import argparse
     import sys
     from pathlib import Path
 
     p = argparse.ArgumentParser(description="Window-function validator")
-    p.add_argument("--window-hex", type=Path, default=None,
-                   help="Path to a $readmemh hex file (16-bit values per line)")
-    p.add_argument("--N", type=int, default=256,
-                   help="Window length for the default Hann generator")
-    p.add_argument("--variant", choices=("periodic", "symmetric"),
-                   default="periodic")
+    p.add_argument(
+        "--window-hex",
+        type=Path,
+        default=None,
+        help="Path to a $readmemh hex file (16-bit values per line)",
+    )
+    p.add_argument(
+        "--N",
+        type=int,
+        default=256,
+        help="Window length for the default Hann generator",
+    )
+    p.add_argument("--variant", choices=("periodic", "symmetric"), default="periodic")
     p.add_argument("--hop", type=int, default=128)
     args = p.parse_args()
 
@@ -217,6 +218,7 @@ def _cli() -> int:                  # pragma: no cover
         # Local import to avoid an unconditional dependency.
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         from gen_hann_coeffs import generate_hann
+
         w = generate_hann(args.N, variant=args.variant)
 
     report = validate_all(w, hop=args.hop)

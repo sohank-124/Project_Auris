@@ -38,8 +38,9 @@ from common.formats import write_hex
 # ---------------------------------------------------------------------------
 # Latency stimuli
 # ---------------------------------------------------------------------------
-def gen_latency_impulse(n_samples: int = 4096,
-                        marker_pos: int = 256) -> Tuple[List[float], int]:
+def gen_latency_impulse(
+    n_samples: int = 4096, marker_pos: int = 256
+) -> Tuple[List[float], int]:
     """Return ``(signal, marker_pos)`` — a single impulse + zeros.
 
     The marker position is the index of the impulse peak; the
@@ -47,7 +48,9 @@ def gen_latency_impulse(n_samples: int = 4096,
     to determine round-trip delay.
     """
     if n_samples < 1:
-        raise ValueError(f"gen_latency_impulse: n_samples must be >= 1 (got {n_samples})")
+        raise ValueError(
+            f"gen_latency_impulse: n_samples must be >= 1 (got {n_samples})"
+        )
     if marker_pos < 0 or marker_pos >= n_samples:
         raise ValueError(
             f"gen_latency_impulse: marker_pos must be in [0, n_samples) "
@@ -58,9 +61,9 @@ def gen_latency_impulse(n_samples: int = 4096,
     return sig, marker_pos
 
 
-def gen_latency_chirp(n_samples: int = 4096,
-                      f_start: float = 100.0,
-                      f_stop: float = 10000.0) -> List[float]:
+def gen_latency_chirp(
+    n_samples: int = 4096, f_start: float = 100.0, f_stop: float = 10000.0
+) -> List[float]:
     """Generate a wideband linear chirp for group-delay measurement.
 
     The instantaneous phase at sample ``n`` is
@@ -74,13 +77,10 @@ def gen_latency_chirp(n_samples: int = 4096,
     where ``t = n / f_s`` and ``N = n_samples``.
     """
     if n_samples < 2:
-        raise ValueError(
-            f"gen_latency_chirp: n_samples must be >= 2 (got {n_samples})"
-        )
+        raise ValueError(f"gen_latency_chirp: n_samples must be >= 2 (got {n_samples})")
     if f_start <= 0 or f_stop <= 0:
         raise ValueError(
-            f"gen_latency_chirp: f_start, f_stop must be > 0 "
-            f"(got {f_start}, {f_stop})"
+            f"gen_latency_chirp: f_start, f_stop must be > 0 (got {f_start}, {f_stop})"
         )
     two_pi = 2.0 * math.pi
     out: List[float] = []
@@ -92,8 +92,7 @@ def gen_latency_chirp(n_samples: int = 4096,
     return out
 
 
-def gen_latency_marker_signal(n_samples: int = 4096
-                              ) -> Tuple[List[float], List[int]]:
+def gen_latency_marker_signal(n_samples: int = 4096) -> Tuple[List[float], List[int]]:
     """Return ``(signal, marker_positions)`` — a multi-pulse test signal.
 
     Four narrow pulses are placed at 1024-sample intervals starting at
@@ -103,8 +102,7 @@ def gen_latency_marker_signal(n_samples: int = 4096
     """
     if n_samples < 1:
         raise ValueError(
-            f"gen_latency_marker_signal: n_samples must be >= 1 "
-            f"(got {n_samples})"
+            f"gen_latency_marker_signal: n_samples must be >= 1 (got {n_samples})"
         )
     # Default positions: 256, 256+1024, 256+2*1024, 256+3*1024.
     positions = [256, 1280, 2304, 3328]
@@ -141,15 +139,22 @@ def main(argv: List[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         description="Latency test-signal generator.",
     )
-    p.add_argument("--type", choices=("impulse", "chirp", "markers"),
-                   required=True)
+    p.add_argument("--type", choices=("impulse", "chirp", "markers"), required=True)
     p.add_argument("--n-samples", type=int, default=4096)
-    p.add_argument("--marker-pos", type=int, default=256,
-                   help="Impulse position (impulse type only).")
+    p.add_argument(
+        "--marker-pos",
+        type=int,
+        default=256,
+        help="Impulse position (impulse type only).",
+    )
     p.add_argument("--f-start", type=float, default=100.0)
     p.add_argument("--f-stop", type=float, default=10000.0)
-    p.add_argument("--out", type=Path, default=Path("latency_signal"),
-                   help="Output prefix (.txt + .hex are written).")
+    p.add_argument(
+        "--out",
+        type=Path,
+        default=Path("latency_signal"),
+        help="Output prefix (.txt + .hex are written).",
+    )
     args = p.parse_args(argv)
 
     if args.type == "impulse":
@@ -157,12 +162,10 @@ def main(argv: List[str] | None = None) -> int:
         label = f"impulse N={args.n_samples} marker={mp}"
     elif args.type == "chirp":
         sig = gen_latency_chirp(args.n_samples, args.f_start, args.f_stop)
-        label = (f"chirp {args.f_start:g}->{args.f_stop:g} Hz "
-                 f"N={args.n_samples}")
-    else:                                                # markers
+        label = f"chirp {args.f_start:g}->{args.f_stop:g} Hz N={args.n_samples}"
+    else:  # markers
         sig, positions = gen_latency_marker_signal(args.n_samples)
-        label = (f"multi-marker N={args.n_samples} "
-                 f"positions={positions}")
+        label = f"multi-marker N={args.n_samples} positions={positions}"
 
     txt_path = Path(str(args.out) + ".txt")
     hex_path = Path(str(args.out) + ".hex")

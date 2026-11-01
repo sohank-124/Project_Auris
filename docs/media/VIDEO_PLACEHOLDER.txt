@@ -1,0 +1,3 @@
+Place your finished video here as auris-demo.mp4.
+The root README already links to that filename.
+Delete this placeholder after adding the actual video.

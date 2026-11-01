@@ -56,6 +56,7 @@ from common.formats import write_hex, write_txt_table, write_json
 @dataclass
 class WDRCChannel:
     """Static configuration of a single WDRC channel."""
+
     channel_idx: int
     f_low: float
     f_high: float
@@ -76,18 +77,21 @@ class WDRCChannel:
 # ---------------------------------------------------------------------------
 # Band allocation
 # ---------------------------------------------------------------------------
-def compute_channel_bands(n_channels: int = WDRC_CHANNELS,
-                          fs: float = FS,
-                          f_low: float = 80.0,
-                          f_high: float | None = None
-                          ) -> List[Tuple[float, float]]:
+def compute_channel_bands(
+    n_channels: int = WDRC_CHANNELS,
+    fs: float = FS,
+    f_low: float = 80.0,
+    f_high: float | None = None,
+) -> List[Tuple[float, float]]:
     """Logarithmic band allocation from ``f_low`` to ``f_high`` (default ``fs/2``).
 
     Returns a list of ``(f_low_i, f_high_i)`` tuples, each band sharing a
     border with its neighbour.
     """
     if n_channels < 1:
-        raise ValueError(f"compute_channel_bands: n_channels must be >= 1 (got {n_channels})")
+        raise ValueError(
+            f"compute_channel_bands: n_channels must be >= 1 (got {n_channels})"
+        )
     if f_low <= 0:
         raise ValueError("compute_channel_bands: f_low must be > 0")
     if f_high is None:
@@ -99,21 +103,25 @@ def compute_channel_bands(n_channels: int = WDRC_CHANNELS,
 
     log_lo = math.log10(f_low)
     log_hi = math.log10(f_high)
-    edges = [10.0 ** (log_lo + (log_hi - log_lo) * i / n_channels)
-             for i in range(n_channels + 1)]
+    edges = [
+        10.0 ** (log_lo + (log_hi - log_lo) * i / n_channels)
+        for i in range(n_channels + 1)
+    ]
     return [(edges[i], edges[i + 1]) for i in range(n_channels)]
 
 
 # ---------------------------------------------------------------------------
 # I/O curves
 # ---------------------------------------------------------------------------
-def _piecewise_io(input_db: float,
-                  low_knee: float,
-                  high_knee: float,
-                  limit_db: float,
-                  cr_exp: float,
-                  cr_comp: float,
-                  cr_lim: float) -> float:
+def _piecewise_io(
+    input_db: float,
+    low_knee: float,
+    high_knee: float,
+    limit_db: float,
+    cr_exp: float,
+    cr_comp: float,
+    cr_lim: float,
+) -> float:
     """Four-segment piecewise-linear I/O curve.
 
     The anchor point is the linear region between the two knees: at
@@ -124,9 +132,7 @@ def _piecewise_io(input_db: float,
     if cr_exp <= 0 or cr_comp <= 0 or cr_lim <= 0:
         raise ValueError("_piecewise_io: compression ratios must be positive")
 
-    # Compute the gain offset at the high knee so the linear segment is
-    # unity: output = input at high_knee.
-    g_at_high_knee = 0.0
+    # The linear segment is anchored at the high knee, so output equals input.
 
     # Below low_knee: expansion with slope 1/cr_exp, anchored at (low_knee, low_knee).
     if input_db <= low_knee:
@@ -149,8 +155,9 @@ def _piecewise_io(input_db: float,
     return out_at_limit + (input_db - limit_db) / cr_lim
 
 
-def compute_io_curve(channel: WDRCChannel,
-                     n_points: int = 256) -> List[Tuple[float, float]]:
+def compute_io_curve(
+    channel: WDRCChannel, n_points: int = 256
+) -> List[Tuple[float, float]]:
     """Compute a sampled I/O curve for the given channel.
 
     The input axis is sampled linearly from ``-10 dB`` to
@@ -182,9 +189,9 @@ def compute_io_curve(channel: WDRCChannel,
 # ---------------------------------------------------------------------------
 # Envelope coefficients
 # ---------------------------------------------------------------------------
-def compute_envelope_coeffs(attack_ms: float,
-                            release_ms: float,
-                            fs: float = FS) -> Tuple[int, int]:
+def compute_envelope_coeffs(
+    attack_ms: float, release_ms: float, fs: float = FS
+) -> Tuple[int, int]:
     """Compute Q2.14 alpha values for attack / release envelope followers.
 
     alpha = 1 - exp(-1 / (tau * fs))
@@ -222,18 +229,19 @@ def compute_envelope_coeffs(attack_ms: float,
 # ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
-def generate_wdrc_tables(n_channels: int = WDRC_CHANNELS,
-                         out_dir: Path | None = None,
-                         fs: float = FS,
-                         attack_ms: float = WDRC_ATTACK_MS,
-                         release_ms: float = WDRC_RELEASE_MS,
-                         low_knee_db: float = WDRC_LOW_KNEE_DB,
-                         high_knee_db: float = WDRC_HIGH_KNEE_DB,
-                         limit_db: float = WDRC_LIMIT_DB,
-                         cr_expansion: float = WDRC_CR_EXPANSION,
-                         cr_compression: float = WDRC_CR_COMPRESSION,
-                         cr_limiter: float = WDRC_CR_LIMITER
-                         ) -> Dict[str, object]:
+def generate_wdrc_tables(
+    n_channels: int = WDRC_CHANNELS,
+    out_dir: Path | None = None,
+    fs: float = FS,
+    attack_ms: float = WDRC_ATTACK_MS,
+    release_ms: float = WDRC_RELEASE_MS,
+    low_knee_db: float = WDRC_LOW_KNEE_DB,
+    high_knee_db: float = WDRC_HIGH_KNEE_DB,
+    limit_db: float = WDRC_LIMIT_DB,
+    cr_expansion: float = WDRC_CR_EXPANSION,
+    cr_compression: float = WDRC_CR_COMPRESSION,
+    cr_limiter: float = WDRC_CR_LIMITER,
+) -> Dict[str, object]:
     """Generate per-channel I/O curves and global envelope coefficients.
 
     If ``out_dir`` is given, the following files are written:
@@ -277,28 +285,38 @@ def generate_wdrc_tables(n_channels: int = WDRC_CHANNELS,
             "attack_q2_14": int(attack_q),
             "release_q2_14": int(release_q),
             "channels": [asdict(ch) for ch in channels],
-            "curves": [
-                [{"in_db": x, "out_db": y} for x, y in c] for c in curves
-            ],
+            "curves": [[{"in_db": x, "out_db": y} for x, y in c] for c in curves],
         }
         write_json(summary, out_dir / "wdrc_channels.json")
 
         # Envelope coefficient hex file (2 words: attack, release).
         env_path = out_dir / "wdrc_envelope.hex"
-        write_hex([attack_q, release_q], env_path,
-                  header=(f"WDRC envelope coefficients, "
-                          f"attack={attack_ms}ms release={release_ms}ms @ {fs}Hz"))
+        write_hex(
+            [attack_q, release_q],
+            env_path,
+            header=(
+                f"WDRC envelope coefficients, "
+                f"attack={attack_ms}ms release={release_ms}ms @ {fs}Hz"
+            ),
+        )
 
         # Envelope coefficient text file.
         env_txt = out_dir / "wdrc_envelope.txt"
         rows = [
-            {"name": "attack",  "ms": attack_ms,  "alpha": attack_q,
-             "hex": f"{attack_q & 0xFFFF:04X}"},
-            {"name": "release", "ms": release_ms, "alpha": release_q,
-             "hex": f"{release_q & 0xFFFF:04X}"},
+            {
+                "name": "attack",
+                "ms": attack_ms,
+                "alpha": attack_q,
+                "hex": f"{attack_q & 0xFFFF:04X}",
+            },
+            {
+                "name": "release",
+                "ms": release_ms,
+                "alpha": release_q,
+                "hex": f"{release_q & 0xFFFF:04X}",
+            },
         ]
-        write_txt_table(rows, env_txt,
-                        columns=["name", "ms", "alpha", "hex"])
+        write_txt_table(rows, env_txt, columns=["name", "ms", "alpha", "hex"])
 
         # Per-channel I/O curves as .txt files (one per channel).
         for ch, curve in zip(channels, curves):
@@ -308,8 +326,7 @@ def generate_wdrc_tables(n_channels: int = WDRC_CHANNELS,
                 out_dir / f"wdrc_ch{ch.channel_idx:02d}_curve.txt",
                 columns=["in_db", "out_db"],
             )
-        print(f"  wrote {n_channels} channel curves + envelope coeffs "
-              f"to {out_dir}")
+        print(f"  wrote {n_channels} channel curves + envelope coeffs to {out_dir}")
 
     return {
         "channels": channels,
@@ -333,9 +350,11 @@ def main(argv: List[str] | None = None) -> int:
     p.add_argument("--out-dir", type=Path, default=Path("fpga/generated"))
     args = p.parse_args(argv)
 
-    print(f"Generating {args.n_channels}-channel WDRC tables "
-          f"(attack={args.attack_ms}ms, release={args.release_ms}ms) "
-          f"into {args.out_dir}...")
+    print(
+        f"Generating {args.n_channels}-channel WDRC tables "
+        f"(attack={args.attack_ms}ms, release={args.release_ms}ms) "
+        f"into {args.out_dir}..."
+    )
     result = generate_wdrc_tables(
         n_channels=args.n_channels,
         out_dir=args.out_dir,

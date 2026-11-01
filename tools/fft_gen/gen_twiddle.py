@@ -28,8 +28,9 @@ from common.formats import write_hex, write_coe, write_txt_table
 # ---------------------------------------------------------------------------
 # Table generation
 # ---------------------------------------------------------------------------
-def generate_twiddle_table(n: int = N_FFT,
-                           width: int = 16) -> Tuple[List[int], List[int]]:
+def generate_twiddle_table(
+    n: int = N_FFT, width: int = 16
+) -> Tuple[List[int], List[int]]:
     """Generate Q2.14 twiddle table for ``k = 0 .. N/2 - 1``.
 
     For each ``k`` the twiddle is ``W_N^k = exp(-j * 2 * pi * k / N)``,
@@ -38,9 +39,13 @@ def generate_twiddle_table(n: int = N_FFT,
     16-bit signed integers.
     """
     if n < 2 or (n & (n - 1)):
-        raise ValueError(f"generate_twiddle_table: n must be a power of two >= 2 (got {n})")
+        raise ValueError(
+            f"generate_twiddle_table: n must be a power of two >= 2 (got {n})"
+        )
     if width != 16:
-        raise ValueError(f"generate_twiddle_table: only width=16 is supported (got {width})")
+        raise ValueError(
+            f"generate_twiddle_table: only width=16 is supported (got {width})"
+        )
 
     cos_q: List[int] = []
     sin_q: List[int] = []
@@ -75,9 +80,7 @@ def twiddle_to_complex(cos_q: List[int], sin_q: List[int]) -> List[complex]:
 # ---------------------------------------------------------------------------
 # File writers
 # ---------------------------------------------------------------------------
-def generate_twiddle_file(n: int,
-                          out_path: Path,
-                          fmt: str = "hex") -> None:
+def generate_twiddle_file(n: int, out_path: Path, fmt: str = "hex") -> None:
     """Generate the twiddle table and write it to ``out_path``.
 
     Three formats are supported:
@@ -99,9 +102,14 @@ def generate_twiddle_file(n: int,
         for c, s in zip(cos_q, sin_q):
             interleaved.append(c)
             interleaved.append(s)
-        write_hex(interleaved, out_path,
-                  header=(f"Twiddle table for {n}-point FFT, "
-                          f"interleaved (cos, sin) Q2.14, N/2={n // 2} pairs"))
+        write_hex(
+            interleaved,
+            out_path,
+            header=(
+                f"Twiddle table for {n}-point FFT, "
+                f"interleaved (cos, sin) Q2.14, N/2={n // 2} pairs"
+            ),
+        )
     elif fmt == "coe":
         interleaved: List[int] = []
         for c, s in zip(cos_q, sin_q):
@@ -111,17 +119,21 @@ def generate_twiddle_file(n: int,
     elif fmt == "txt":
         rows = []
         for k, (c, s) in enumerate(zip(cos_q, sin_q)):
-            rows.append({
-                "k": k,
-                "theta_rad": -2.0 * math.pi * k / n,
-                "cos_q": c,
-                "sin_q": s,
-                "cos_hex": f"{c & 0xFFFF:04X}",
-                "sin_hex": f"{s & 0xFFFF:04X}",
-            })
-        write_txt_table(rows, out_path,
-                        columns=["k", "theta_rad", "cos_q", "sin_q",
-                                 "cos_hex", "sin_hex"])
+            rows.append(
+                {
+                    "k": k,
+                    "theta_rad": -2.0 * math.pi * k / n,
+                    "cos_q": c,
+                    "sin_q": s,
+                    "cos_hex": f"{c & 0xFFFF:04X}",
+                    "sin_hex": f"{s & 0xFFFF:04X}",
+                }
+            )
+        write_txt_table(
+            rows,
+            out_path,
+            columns=["k", "theta_rad", "cos_q", "sin_q", "cos_hex", "sin_hex"],
+        )
     else:
         raise ValueError(f"generate_twiddle_file: unknown format {fmt!r}")
 
@@ -133,10 +145,10 @@ def main(argv: List[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         description="Generate FFT twiddle-factor tables.",
     )
-    p.add_argument("--N", type=int, default=N_FFT,
-                   help="FFT length (default: %(default)s)")
-    p.add_argument("--format", choices=("hex", "coe", "txt"),
-                   default="hex")
+    p.add_argument(
+        "--N", type=int, default=N_FFT, help="FFT length (default: %(default)s)"
+    )
+    p.add_argument("--format", choices=("hex", "coe", "txt"), default="hex")
     p.add_argument("--out", type=Path, default=Path("twiddle.hex"))
     args = p.parse_args(argv)
 
@@ -157,8 +169,7 @@ def main(argv: List[str] | None = None) -> int:
         err = abs(z - exact)
         if err > max_err:
             max_err = err
-    print(f"  max quantisation error: {max_err:.3e}  "
-          f"(1 LSB = {1.0 / 16384.0:.3e})")
+    print(f"  max quantisation error: {max_err:.3e}  (1 LSB = {1.0 / 16384.0:.3e})")
     return 0
 
 

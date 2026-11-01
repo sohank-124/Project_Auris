@@ -15,6 +15,7 @@ fpga/ip/
 
 # Vivado project directory (Tcl-driven, not committed)
 vivado_proj/
+vivado_proj_*/
 *.rpt
 
 # Logs
@@ -66,3 +67,35 @@ Thumbs.db
 /docs/session_summary_2026-08-12.md
 /docs/session_summary_fpga_only_verification.md
 /docs/verification_recovery_report.md
+
+# Reviewed raw investigation workspaces: preserve locally; publish selected evidence.
+/.audit_verification/
+/REPAIR_CHECKLIST.md
+/clockInfo.txt
+
+# Reproducible inspection exports, simulator databases and local environments.
+/fpga/generated/
+*.wdb
+*.vcd
+*.fst
+*.wlf
+*.vvp
+*.sim/
+*.runs/
+*.cache/
+*.gen/
+*.hw/
+*.ip_user_files/
+.venv/
+venv/
+.ruff_cache/
+.pytest_cache/
+node_modules/
+/obj_dir*/
+
+# Deliberate public evidence exceptions. Do not generalize to all audit/research files.
+!/docs/verification/evidence/**/*.rpt
+
+# Local hardware bring-up and demonstration project outputs
+/fpga/vivado_bringup/
+/fpga/vivado_demo/

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
 from pathlib import Path
 from typing import List, Tuple
@@ -51,15 +50,15 @@ def cross_correlate(x: List[float], y: List[float]) -> List[float]:
 
     try:
         import numpy as np
-    except ImportError as exc:                                # pragma: no cover
+    except ImportError as exc:  # pragma: no cover
         raise ImportError(
             "cross_correlate requires numpy. Install with: pip install numpy"
         ) from exc
 
     xp = np.zeros(n_fft, dtype=np.float64)
     yp = np.zeros(n_fft, dtype=np.float64)
-    xp[:len(x)] = x
-    yp[:len(y)] = y
+    xp[: len(x)] = x
+    yp[: len(y)] = y
 
     R_fft = np.fft.ifft(np.fft.fft(xp) * np.conj(np.fft.fft(yp))).real
     # Rearrange so that R[k] is the cross-correlation at lag k - (M - 1),
@@ -72,9 +71,9 @@ def cross_correlate(x: List[float], y: List[float]) -> List[float]:
 # ---------------------------------------------------------------------------
 # Peak picking
 # ---------------------------------------------------------------------------
-def measure_delay(input_signal: List[float],
-                  output_signal: List[float],
-                  fs: float = FS) -> Tuple[int, float]:
+def measure_delay(
+    input_signal: List[float], output_signal: List[float], fs: float = FS
+) -> Tuple[int, float]:
     """Measure the delay (samples, then sub-samples) between two signals.
 
     The cross-correlation is computed; the integer peak position is
@@ -155,9 +154,9 @@ def _read_signal_file(path: Path) -> List[float]:
 # ---------------------------------------------------------------------------
 # Top-level driver
 # ---------------------------------------------------------------------------
-def measure_roundtrip_latency(input_path: Path,
-                              output_path: Path,
-                              fs: float = FS) -> dict:
+def measure_roundtrip_latency(
+    input_path: Path, output_path: Path, fs: float = FS
+) -> dict:
     """Read two signal files, measure their relative delay, and report.
 
     Parameters
@@ -201,19 +200,24 @@ def main(argv: List[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         description="Measure round-trip latency from input / output signal files.",
     )
-    p.add_argument("--input", type=Path, required=True,
-                   help="Path to recorded input signal.")
-    p.add_argument("--output", type=Path, required=True,
-                   help="Path to recorded output signal.")
+    p.add_argument(
+        "--input", type=Path, required=True, help="Path to recorded input signal."
+    )
+    p.add_argument(
+        "--output", type=Path, required=True, help="Path to recorded output signal."
+    )
     p.add_argument("--fs", type=float, default=FS)
-    p.add_argument("--out", type=Path, default=None,
-                   help="Optional JSON report output.")
+    p.add_argument(
+        "--out", type=Path, default=None, help="Optional JSON report output."
+    )
     args = p.parse_args(argv)
 
     result = measure_roundtrip_latency(args.input, args.output, fs=args.fs)
-    print(f"Round-trip latency: {result['delay_ms']:.4f} ms  "
-          f"({result['sub_sample_delay_samples']:.3f} samples @ "
-          f"{result['fs']:.0f} Hz)")
+    print(
+        f"Round-trip latency: {result['delay_ms']:.4f} ms  "
+        f"({result['sub_sample_delay_samples']:.3f} samples @ "
+        f"{result['fs']:.0f} Hz)"
+    )
     print(f"  integer delay  = {result['int_delay_samples']} samples")
     print(f"  peak |R|       = {result['peak_correlation']:.3e}")
     if args.out is not None:

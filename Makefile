@@ -7,7 +7,7 @@
 #   * Original SPI RTL files retained under fpga/rtl/ as dead modules for
 #     reference; archival copies live under archive/rtl/.
 # =============================================================================
-.PHONY: help fpga fpga-selftest fpga-clean fpga-sim fpga-sim-selftest all clean
+.PHONY: tools help fpga fpga-selftest fpga-clean fpga-sim fpga-sim-selftest all clean
 
 # Default target
 help:
@@ -26,9 +26,9 @@ help:
 # ----- Tools -----
 tools:
 	@echo "==> Generating Hann window coefficients..."
-	cd tools && python win_gen/gen_hann_coeffs.py
+	python tools/win_gen/gen_hann_coeffs.py
 	@echo "==> Generating default gain profile tables..."
-	cd tools && python profile_gen/gen_default_tables.py
+	python tools/profile_gen/gen_default_tables.py
 
 # ----- FPGA -----
 fpga:
@@ -43,7 +43,7 @@ fpga-clean:
 	rm -rf vivado_proj/ fpga/*.runs/ fpga/*.cache/
 
 fpga-sim:
-	vivado -mode batch -source fpga/scripts/sim_i2s_rx.tcl
+	vivado -mode batch -source fpga/scripts/sim_all.tcl
 	# sim_spi_slave.tcl removed in Phase 5 (FPGA-only migration, 2026-08).
 	# SPI RTL is archived under archive/rtl/ and not part of the active build.
 

@@ -1,0 +1,17 @@
+{
+  "fpga/rtl/pkg/auris_pkg.sv": "a11715e029227a6344ff12793ecf5462025a26259e2767d3eff1c9e6ec022a68",
+  "fpga/rtl/dsp/window_rom.sv": "48667564808ab142af0dfc1797a891dccd91b5a926ccb77d1f43781bd0d50395",
+  "fpga/rtl/ctrl/mode_ctrl.sv": "489f0e71f47f3ea79182257c988d6f387ad856e00b5e93a1d8d7c005ddb3d057",
+  "tools/win_gen/gen_hann_coeffs.py": "d7d2e99e448a538865fb70b83d2eda87231198b142cb51e7a397bf0a91b4c9db",
+  "tools/profile_gen/gen_default_tables.py": "9b1d8b717fadae50c4804250eec6c7efcf976d82000bb42c893873c1d30d9876",
+  "tools/common/formats.py": "dfda871fe247dc2fd3432d79ce160ba4cfd2a6d2c9e2a6c016bf8a3bd496148c",
+  "tools/common/constants.py": "2a3998d1d2059a4760216ccf91ca164edd684bde42e0f35d879bb53a0d31943a",
+  "fpga/scripts/simulation_common.tcl": "488495ab540ae605df035c950b074094110f581b8161ad13b51bdcd9c02951c4",
+  ".github/workflows/ci.yml": "27fb333536b69f33e071f554a01803c1488b34418d142ba96636f0d58e88cafb",
+  ".github/workflows/release.yml": "377bd0ae56e27720264f60e7669011dd5df1f99acec79ca06b8f428d4e02d140",
+  "tools/README.md": "ebef5fb053f3564636553e4656826bd8aa194e66504d1f286ad3cefbc0ebc2c1",
+  "fpga/scripts/sim_window_apply.tcl": "d52f5ece7c87c841ae05efc39e03c27db2f16d0ce7b76e861dce76c08229545d",
+  ".audit_verification/repair_runs/f30/check_exports.py": "72d8282bc6f6a919dcc6cc4b32d0c2d58ff158287a02ac3756d29a44b538a810",
+  ".audit_verification/repair_runs/f30/tb_f30_rom.sv": "e3835a420e3546702457dd50431d2e9d86e6e16f576f02643d618708419a396e",
+  ".audit_verification/repair_runs/f30/verify_rom.tcl": "5449d205b9a0ab310e621fbabb7cf36b3a48cf99c6512071012adf1ccfcecead"
+}

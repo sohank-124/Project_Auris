@@ -18,7 +18,7 @@
 //                * reset_sync_stretch — 2-FF synchroniser + 16-bit SRL
 //                                    reset-stretcher, one per clock domain
 //                                    (DSP and I2S only — no SPI).
-//                * btn_debounce   — 4 active-low push buttons, 20 ms debounce
+//                * btn_debounce   — 4 active-high push buttons, 20 ms debounce
 //                                    with press / release pulse outputs.
 //                * i2s_rx / i2s_tx — INMP441 MEMS-mic receiver and PCM5102A
 //                                    DAC transmitter, both running in the
@@ -50,7 +50,7 @@
 //                                           healthy and out of reset.
 //                STATUS2 (status_clip_o) — sticky clip-event indicator;
 //                                           cleared on FPGA reset only.
-//                RGB LED                 — mode-dependent colour, active-low
+//                RGB LED                 — mode-dependent colour, active-high
 //                                           drive on the Arty S7-25:
 //                                             green   = General (mode 0)
 //                                             blue    = Speech  (mode 1)
@@ -80,7 +80,7 @@ module top import auris_pkg::*; #(
     input  wire        clk_12mhz,          // onboard 12 MHz oscillator
 
     // -----------------------------------------------------------------------
-    // Onboard push buttons (active-low on Arty S7-25)
+    // Onboard push buttons (active-high on Arty S7-25)
     //   BTN0 = mode+    BTN1 = mode-
     //   BTN2 = vol+     BTN3 = vol-
     // -----------------------------------------------------------------------
@@ -106,7 +106,7 @@ module top import auris_pkg::*; #(
     output wire        status_clip_o,      // STATUS2: clip indicator
 
     // -----------------------------------------------------------------------
-    // Onboard RGB LED (active low on Arty S7-25)
+    // Onboard RGB LED (active high on Arty S7-25)
     // -----------------------------------------------------------------------
     output logic       led_rgb_r,
     output logic       led_rgb_g,
@@ -128,6 +128,10 @@ module top import auris_pkg::*; #(
     logic [I2S_DATA_W-1:0] i2s_rx_r_data;
     logic                  i2s_rx_valid;
     logic                  i2s_rx_overflow;
+    logic i2s_rx_l_full, i2s_rx_r_full;
+    wire i2s_rx_pair_write = i2s_rx_valid && !i2s_rx_l_full && !i2s_rx_r_full;
+    logic rx_drop_sticky, tx_drop_sticky;
+    (* ASYNC_REG = "TRUE" *) logic rx_drop_meta, rx_drop_dsp;
 
     // -------------------------------------------------------------------------
     // Local nets — I2S TX path (BCLK domain)
@@ -174,6 +178,7 @@ module top import auris_pkg::*; #(
     logic [15:0] mode_bank_wdata;
     logic [1:0]  mode_bank_sel;
     logic        mode_bank_commit;
+    wire         mode_bank_active;
     logic [23:0] mode_master_gain;
     logic [23:0] mode_noise_floor;
     logic [23:0] mode_gate_ratio;
@@ -301,8 +306,8 @@ module top import auris_pkg::*; #(
     // ~30 FFs and one SRL16E chain.
     //
     // Each generator provides:
-    //   * 2-FF synchroniser into the destination clock domain
-    //   * (STRETCH_CYCLES)-bit shift register forming the reset stretcher
+    //   * At least two synchronizing stages in one release chain
+    //   * A single final register driving reset consumers
     //   * Async assert (via async clear of the FFs)
     //   * Sync deassert (via the shift register filling with 1s)
     reset_sync_stretch #(
@@ -324,7 +329,7 @@ module top import auris_pkg::*; #(
     // =========================================================================
     // Button debounce
     // =========================================================================
-    // 4 active-low buttons, 20 ms debounce.  Produces per-button:
+    // 4 active-high buttons, 20 ms debounce.  Produces per-button:
     //   btn_pressed_o       — current debounced state (active-high)
     //   btn_press_pulse_o   — 1-cycle pulse on the leading edge
     //   btn_release_pulse_o — 1-cycle pulse on the trailing edge
@@ -373,7 +378,7 @@ module top import auris_pkg::*; #(
     // =========================================================================
     // Volume controller (inline counter in the DSP domain)
     // =========================================================================
-    // BTN2 = volume up   (saturates at 31 = unity Q2.14)
+    // BTN2 = volume up by four levels (saturates at 31 = unity Q2.14)
     // BTN3 = volume down (saturates at 0  = mute)
     //
     // The 5-bit value is consumed by dsp_pipeline.volume_i and mapped to a
@@ -384,13 +389,32 @@ module top import auris_pkg::*; #(
             volume_level <= 5'd31;          // start at unity
         end else begin
             if (btn_press_pulse[2] && (volume_level < 5'd31))
-                volume_level <= volume_level + 5'd1;
+                volume_level <= (volume_level >= 5'd27) ? 5'd31 : volume_level + 5'd4;
             else if (btn_press_pulse[3] && (volume_level > 5'd0))
-                volume_level <= volume_level - 5'd1;
+                volume_level <= (volume_level <= 5'd4) ? 5'd0 : volume_level - 5'd4;
         end
     end
 
     // =========================================================================
+    // A drop is latched where it occurs; only the sticky single bit crosses.
+    always_ff @(posedge i2s_bclk_o or negedge rst_i2s_n) begin
+        if (!rst_i2s_n) rx_drop_sticky <= 1'b0;
+        else if (i2s_rx_valid && (i2s_rx_l_full || i2s_rx_r_full))
+            rx_drop_sticky <= 1'b1;
+    end
+    always_ff @(posedge clk_96mhz or negedge rst_dsp_n) begin
+        if (!rst_dsp_n) begin
+            rx_drop_meta <= 1'b0;
+            rx_drop_dsp <= 1'b0;
+            tx_drop_sticky <= 1'b0;
+        end else begin
+            rx_drop_meta <= rx_drop_sticky;
+            rx_drop_dsp <= rx_drop_meta;
+            if (dsp_out_valid && (i2s_tx_l_full || i2s_tx_r_full))
+                tx_drop_sticky <= 1'b1;
+        end
+    end
+
     // LRCLK 2-FF synchroniser (I2S BCLK domain)
     // =========================================================================
     // Produces i2s_lrclk_fall: a 1-BCLK-cycle pulse aligned to the
@@ -400,7 +424,7 @@ module top import auris_pkg::*; #(
         if (!rst_i2s_n) i2s_lrclk_sync <= 2'b00;
         else            i2s_lrclk_sync <= {i2s_lrclk_sync[0], i2s_lrclk_o};
     end
-    assign i2s_lrclk_s = i2s_lrclk_sync[1];
+    assign i2s_lrclk_s = i2s_lrclk_o;
 
     always_ff @(posedge i2s_bclk_o or negedge rst_i2s_n) begin
         if (!rst_i2s_n) i2s_lrclk_s_d <= 1'b0;
@@ -463,7 +487,7 @@ module top import auris_pkg::*; #(
     ) u_cdc_i2s_l (
         .wr_clk_i  (i2s_bclk_o),
         .wr_rst_n_i(rst_i2s_n),
-        .wr_en_i   (i2s_rx_valid),
+        .wr_en_i   (i2s_rx_pair_write),
         .wr_data_i (i2s_rx_l_data),
         .rd_clk_i  (clk_96mhz),
         .rd_rst_n_i(rst_dsp_n),
@@ -471,7 +495,7 @@ module top import auris_pkg::*; #(
         .rd_data_o (dsp_sample_l),
         .rd_valid_o(),
         .rd_empty_o(cdc_l_empty),
-        .wr_full_o ()
+        .wr_full_o (i2s_rx_l_full)
     );
 
     cdc_i2s_to_dsp #(
@@ -480,7 +504,7 @@ module top import auris_pkg::*; #(
     ) u_cdc_i2s_r (
         .wr_clk_i  (i2s_bclk_o),
         .wr_rst_n_i(rst_i2s_n),
-        .wr_en_i   (i2s_rx_valid),
+        .wr_en_i   (i2s_rx_pair_write),
         .wr_data_i (i2s_rx_r_data),
         .rd_clk_i  (clk_96mhz),
         .rd_rst_n_i(rst_dsp_n),
@@ -488,7 +512,7 @@ module top import auris_pkg::*; #(
         .rd_data_o (dsp_sample_r),
         .rd_valid_o(),
         .rd_empty_o(cdc_r_empty),
-        .wr_full_o ()
+        .wr_full_o (i2s_rx_r_full)
     );
 
     // 1-cycle dsp_sample_valid per "empty → non-empty" transition on
@@ -504,7 +528,7 @@ module top import auris_pkg::*; #(
             cdc_r_empty_d <= cdc_r_empty;
         end
     end
-    assign dsp_sample_valid = !cdc_l_empty && cdc_l_empty_d;
+    assign dsp_sample_valid = !cdc_l_empty && !cdc_r_empty;
 
     // =========================================================================
     // Self-test stimulus mux (compile-time gated)
@@ -536,7 +560,7 @@ module top import auris_pkg::*; #(
         .wr_data_i (dsp_out_l),
         .rd_clk_i  (i2s_bclk_o),
         .rd_rst_n_i(rst_i2s_n),
-        .rd_en_i   (i2s_lrclk_fall & !i2s_tx_l_empty),
+        .rd_en_i   (i2s_lrclk_fall & i2s_tx_valid),
         .rd_data_o (i2s_tx_l_data),
         .rd_valid_o(),
         .rd_empty_o(i2s_tx_l_empty),
@@ -553,7 +577,7 @@ module top import auris_pkg::*; #(
         .wr_data_i (dsp_out_r),
         .rd_clk_i  (i2s_bclk_o),
         .rd_rst_n_i(rst_i2s_n),
-        .rd_en_i   (i2s_lrclk_fall & !i2s_tx_r_empty),
+        .rd_en_i   (i2s_lrclk_fall & i2s_tx_valid),
         .rd_data_o (i2s_tx_r_data),
         .rd_valid_o(),
         .rd_empty_o(i2s_tx_r_empty),
@@ -627,7 +651,7 @@ module top import auris_pkg::*; #(
     // On every mode_we_pulse, mode_ctrl streams 128 Q2.14 coefficients
     // into the inactive bank of the spectral_proc gain BRAM via
     // bank_we_o / bank_addr_o / bank_wdata_o / bank_sel_o, then pulses
-    // bank_commit_o to atomically swap banks (no glitch in audio).
+    // bank_commit_o to request a frame-boundary swap, then waits for acknowledgement.
     //
     // default_*_o drive mode-dependent scalar controls in the FPGA-only build.
     mode_ctrl #(
@@ -637,6 +661,7 @@ module top import auris_pkg::*; #(
         .rst_n_i                (rst_dsp_n),
         .mode_i                 (current_mode),
         .mode_we_i              (mode_we_pulse),
+        .bank_active_i          (mode_bank_active),
         .bank_we_o              (mode_bank_we),
         .bank_addr_o            (mode_bank_addr),
         .bank_wdata_o           (mode_bank_wdata),
@@ -650,8 +675,9 @@ module top import auris_pkg::*; #(
     // -------------------------------------------------------------------------
     // Lightweight adaptive noise-floor tracker (DSP domain)
     // -------------------------------------------------------------------------
+    // Heuristic threshold: squared mean absolute input, not a noise-spectrum estimate.
     // Tracks average input magnitude using a leaky accumulator updated at
-    // sample rate. The derived floor is clamped and OR'd with the mode floor.
+    // sample rate. The derived floor is converted to Q2.14 power and maximized with the mode floor.
     always_ff @(posedge clk_96mhz or negedge rst_dsp_n) begin
         if (!rst_dsp_n) begin
             noise_env_accum      <= 32'd0;
@@ -670,12 +696,12 @@ module top import auris_pkg::*; #(
         avg_sample_mag = avg_abs[23:8];
         noise_power    = avg_sample_mag * avg_sample_mag;
 
-        if (noise_power[31:8] < 24'd1024)
+        if ({6'b0, noise_power[31:14]} < 24'd1024)
             adaptive_noise_floor_next = 24'd1024;
-        else if (noise_power[31:8] > 24'd65535)
+        else if ({6'b0, noise_power[31:14]} > 24'd65535)
             adaptive_noise_floor_next = 24'd65535;
         else
-            adaptive_noise_floor_next = noise_power[31:8];
+            adaptive_noise_floor_next = {6'b0, noise_power[31:14]};
 
         if (adaptive_noise_floor[15:0] > mode_noise_floor[15:0])
             dsp_noise_floor_ctrl = adaptive_noise_floor;
@@ -725,6 +751,7 @@ module top import auris_pkg::*; #(
         .gain_we_i       (mode_bank_we),
         .gain_bank_i     (mode_bank_sel),
         .bank_commit_i   (mode_bank_commit),
+        .gain_bank_active_o(mode_bank_active),
         // Telemetry
         .peak_in_o       (dsp_peak_in),
         .peak_out_o      (dsp_peak_out),
@@ -772,7 +799,9 @@ module top import auris_pkg::*; #(
     );
 
     assign status_led_o  = status_heartbeat;
-    assign status_clip_o = status_clip_latch | selftest_loop_fail;
+    // STATUS2 also indicates dropped audio; reset clears all sticky flags.
+    assign status_clip_o = status_clip_latch | selftest_loop_fail |
+                           rx_drop_dsp | tx_drop_sticky | dsp_error_flags[4];
 
     // Blink helper used only for self-test LED overlays (~0.7 Hz at 96 MHz).
     always_ff @(posedge clk_96mhz or negedge rst_dsp_n) begin
@@ -788,58 +817,58 @@ module top import auris_pkg::*; #(
     end
 
     // =========================================================================
-    // RGB LED (mode-dependent, active-low drive)
+    // RGB LED (mode-dependent, active-high drive)
     // =========================================================================
-    // Arty S7-25 RGB LED is active-low: 1'b0 = ON, 1'b1 = OFF.
+    // Arty S7-25 RGB LED is active-high: 1'b1 = ON, 1'b0 = OFF.
     //
-    //   mode 0  → green     (R=1, G=0, B=1)   General
-    //   mode 1  → blue      (R=1, G=1, B=0)   Speech
-    //   mode 2  → magenta   (R=0, G=1, B=0)   Music
-    //   mode 3  → red       (R=0, G=1, B=1)   Hearing
+    //   mode 0  → green     (R=0, G=1, B=0)   General
+    //   mode 1  → blue      (R=0, G=0, B=1)   Speech
+    //   mode 2  → magenta   (R=1, G=0, B=1)   Music
+    //   mode 3  → red       (R=1, G=0, B=0)   Hearing
     always_comb begin
         if (SELF_TEST_ENABLE && SELF_TEST_LOOPBACK_ENABLE) begin
             if (selftest_loop_fail) begin
                 // Red = loopback mismatch detected.
-                led_rgb_r = 1'b0;
-                led_rgb_g = 1'b1;
-                led_rgb_b = 1'b1;
-            end else if (selftest_loop_pass) begin
-                // Cyan = sustained no-error loopback.
                 led_rgb_r = 1'b1;
                 led_rgb_g = 1'b0;
                 led_rgb_b = 1'b0;
+            end else if (selftest_loop_pass) begin
+                // Cyan = sustained no-error loopback.
+                led_rgb_r = 1'b0;
+                led_rgb_g = 1'b1;
+                led_rgb_b = 1'b1;
             end else begin
                 // Yellow (blinking) = checker warming up / accumulating.
-                led_rgb_r = selftest_led_phase;
-                led_rgb_g = selftest_led_phase;
-                led_rgb_b = 1'b1;
+                led_rgb_r = ~selftest_led_phase;
+                led_rgb_g = ~selftest_led_phase;
+                led_rgb_b = 1'b0;
             end
         end else begin
             case (current_mode)
                 2'd0: begin
+                    led_rgb_r = 1'b0;
+                    led_rgb_g = 1'b1;
+                    led_rgb_b = 1'b0;
+                end
+                2'd1: begin
+                    led_rgb_r = 1'b0;
+                    led_rgb_g = 1'b0;
+                    led_rgb_b = 1'b1;
+                end
+                2'd2: begin
                     led_rgb_r = 1'b1;
                     led_rgb_g = 1'b0;
                     led_rgb_b = 1'b1;
                 end
-                2'd1: begin
-                    led_rgb_r = 1'b1;
-                    led_rgb_g = 1'b1;
-                    led_rgb_b = 1'b0;
-                end
-                2'd2: begin
-                    led_rgb_r = 1'b0;
-                    led_rgb_g = 1'b1;
-                    led_rgb_b = 1'b0;
-                end
                 2'd3: begin
-                    led_rgb_r = 1'b0;
-                    led_rgb_g = 1'b1;
-                    led_rgb_b = 1'b1;
+                    led_rgb_r = 1'b1;
+                    led_rgb_g = 1'b0;
+                    led_rgb_b = 1'b0;
                 end
                 default: begin
-                    led_rgb_r = 1'b1;
-                    led_rgb_g = 1'b1;
-                    led_rgb_b = 1'b1;
+                    led_rgb_r = 1'b0;
+                    led_rgb_g = 1'b0;
+                    led_rgb_b = 1'b0;
                 end
             endcase
         end
@@ -854,7 +883,7 @@ module top import auris_pkg::*; #(
     // loudly at elaboration.
     initial begin
         if (FFT_LEN != 256) begin
-            $display("ERROR: top FFT_LEN=%0d, expected 256", FFT_LEN);
+            $fatal(1, "top requires FFT_LEN=256");
         end
     end
 
@@ -863,15 +892,9 @@ endmodule : top
 // =============================================================================
 // Helper module: reset_sync_stretch
 // =============================================================================
-// 2-FF synchroniser + (STRETCH_CYCLES)-bit shift register providing
-// async-assert / sync-deassert reset behaviour to a destination clock
-// domain.  The shift register is inferred as an SRL16E on Spartan-7.
-//
-// The first two stages form the 2-FF synchroniser required for safe
-// CDC.  The remaining STRETCH_CYCLES stages form the reset stretcher.
-// The output is the AND-reduce of the entire pipe — it goes high only
-// when every bit is 1, which is STRETCH_CYCLES+2 cycles after
-// src_rst_n_i goes high.
+// Reset release is delayed by max(STRETCH_CYCLES, 2) destination edges.
+// A single final FF drives consumers. ASYNC_REG/SHREG_EXTRACT preserve the
+// synchronization chain as FFs; asynchronous clear cannot be an SRL16E.
 // =============================================================================
 `default_nettype none
 `timescale 1ns / 1ps
@@ -883,21 +906,16 @@ module reset_sync_stretch #(
     input  wire dst_clk_i,      // destination clock
     output wire dst_rst_n_o     // stretched, sync deassert
 );
-    (* ASYNC_REG = "TRUE" *) logic [1:0] sync_ff;
-    logic [STRETCH_CYCLES-1:0] stretch_pipe;
-
-    always_ff @(posedge dst_clk_i or negedge src_rst_n_i) begin
-        if (!src_rst_n_i) begin
-            sync_ff      <= 2'b00;
-            stretch_pipe <= {STRETCH_CYCLES{1'b0}};
-        end else begin
-            sync_ff      <= {sync_ff[0], 1'b1};
-            stretch_pipe <= {stretch_pipe[STRETCH_CYCLES-2:0], 1'b1};
-        end
-    end
-
-    assign dst_rst_n_o = &{sync_ff, stretch_pipe};
-
+    // Preserve the previous max(STRETCH_CYCLES, 2) release latency, but
+    // drive consumers from one FF rather than an AND of parallel chains.
+    localparam int unsigned RELEASE_CYCLES = (STRETCH_CYCLES < 2)
+                                              ? 2 : STRETCH_CYCLES;
+    reset_release #(.STAGES(RELEASE_CYCLES)) u_release (
+        .clk_i(dst_clk_i), .async_rst_n_i(src_rst_n_i),
+        .rst_n_o(dst_rst_n_o)
+    );
+    initial if (STRETCH_CYCLES < 1)
+        $fatal(1, "reset_sync_stretch requires STRETCH_CYCLES >= 1");
 endmodule : reset_sync_stretch
 
 `default_nettype wire

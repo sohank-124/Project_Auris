@@ -46,8 +46,8 @@ module window_rom import auris_pkg::*; #(
             w      = 0.5 * (1.0 - $cos(2.0 * pi * real'(n) / real'(LEN)));
             scaled = $rtoi(w * real'(int'(1) <<< WIDTH-2) + 0.5);
             if (scaled < 0)            scaled = 0;
-            if (scaled > int'(1)<<WIDTH - 1) scaled = (int'(1)<<WIDTH) - 1;
-            hann_calc = logic'(scaled[WIDTH-1:0]);
+            if (scaled > ((1 << WIDTH) - 1)) scaled = (int'(1)<<WIDTH) - 1;
+            hann_calc = scaled[WIDTH-1:0];
         end
     endfunction
 
@@ -73,8 +73,8 @@ module window_rom import auris_pkg::*; #(
     // Synthesis-time sanity
     // -------------------------------------------------------------------------
     initial begin
-        if (LEN != 256)
-            $display("WARNING: window_rom LEN=%0d, expected 256", LEN);
+        if (LEN != 256 || WIDTH != 16)
+            $fatal(1, "window_rom supports LEN=256 WIDTH=16");
     end
 
 endmodule : window_rom

@@ -23,6 +23,7 @@ the results.
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -32,15 +33,15 @@ _TOOLS = _HERE.parent
 if str(_TOOLS) not in sys.path:
     sys.path.insert(0, str(_TOOLS))
 
-from common.constants import GAIN_DB_MIN, GAIN_DB_MAX
+from common.constants import FS, N_FFT, GAIN_DB_MIN, GAIN_DB_MAX
 
 
 # ---------------------------------------------------------------------------
 # Individual checks
 # ---------------------------------------------------------------------------
-def check_gain_range(gains_db: List[float],
-                     lo: float = GAIN_DB_MIN,
-                     hi: float = GAIN_DB_MAX) -> Tuple[bool, float, float]:
+def check_gain_range(
+    gains_db: List[float], lo: float = GAIN_DB_MIN, hi: float = GAIN_DB_MAX
+) -> Tuple[bool, float, float]:
     """Check every entry lies within ``[lo, hi]`` (dB).
 
     Returns ``(ok, min_gain, max_gain)``.
@@ -52,8 +53,9 @@ def check_gain_range(gains_db: List[float],
     return ((g_min >= lo and g_max <= hi), g_min, g_max)
 
 
-def check_monotonicity(gains_db: List[float],
-                       expected_direction: str = "any") -> Tuple[bool, int]:
+def check_monotonicity(
+    gains_db: List[float], expected_direction: str = "any"
+) -> Tuple[bool, int]:
     """Check that the gain curve is monotonic in the requested direction.
 
     Parameters
@@ -83,8 +85,9 @@ def check_monotonicity(gains_db: List[float],
     return (n_viol == 0, n_viol)
 
 
-def check_smoothness(gains_db: List[float],
-                     max_step_db: float = 3.0) -> Tuple[bool, float, int]:
+def check_smoothness(
+    gains_db: List[float], max_step_db: float = 3.0
+) -> Tuple[bool, float, int]:
     """Check that no adjacent step exceeds ``max_step_db`` dB.
 
     Returns ``(ok, max_step_db, n_violations)``.
@@ -102,8 +105,7 @@ def check_smoothness(gains_db: List[float],
     return (n_viol == 0, max_step, n_viol)
 
 
-def check_dc_unity(gains_db: List[float],
-                   tol_db: float = 0.1) -> Tuple[bool, float]:
+def check_dc_unity(gains_db: List[float], tol_db: float = 0.1) -> Tuple[bool, float]:
     """Check the DC-bin (index 0) gain is 0 dB within ``tol_db``.
 
     Returns ``(ok, dc_gain_db)``.
@@ -116,8 +118,7 @@ def check_dc_unity(gains_db: List[float],
 # ---------------------------------------------------------------------------
 # Aggregate
 # ---------------------------------------------------------------------------
-def validate_gain_table(gains_db: List[float],
-                        audiogram: List[float] = None) -> Dict:
+def validate_gain_table(gains_db: List[float], audiogram: List[float] = None) -> Dict:
     """Run all the gain-table checks and return a structured report.
 
     Parameters
@@ -134,12 +135,12 @@ def validate_gain_table(gains_db: List[float],
     dict
         ``{"all_passed", "n_bins", "checks": {...}, "summary": "..."}``.
     """
-    if not gains_db:
+    if len(gains_db) != N_FFT // 2 or not all(map(math.isfinite, gains_db)):
         return {
-            "all_passed": True,
-            "n_bins": 0,
+            "all_passed": False,
+            "n_bins": len(gains_db),
             "checks": {},
-            "summary": "empty table — nothing to check",
+            "summary": "expected 128 finite gain values",
         }
 
     range_ok, g_min, g_max = check_gain_range(gains_db)
@@ -147,28 +148,36 @@ def validate_gain_table(gains_db: List[float],
     dc_ok, dc_gain = check_dc_unity(gains_db)
 
     # Monotonicity: require the curve to be non-decreasing for bins
-    # in the speech band (1 kHz..4 kHz).  Indices 21..85 in a 256-pt
-    # FFT (FS=48 kHz) cover roughly 1-4 kHz.
+    # in the speech band (1 kHz..4 kHz), using actual bin frequencies.
+    first_bin = math.ceil(1000 * N_FFT / FS)
+    last_bin = math.floor(4000 * N_FFT / FS)
     mono_ok, n_mono_viol = check_monotonicity(
-        gains_db[21:86], expected_direction="increasing"
+        gains_db[first_bin:last_bin + 1], expected_direction="increasing"
     )
 
     checks: Dict = {
-        "gain_range":   {"ok": range_ok, "min_db": g_min, "max_db": g_max},
-        "smoothness":   {"ok": smooth_ok, "max_step_db": max_step,
-                         "n_violations": n_step_viol},
-        "dc_unity":     {"ok": dc_ok, "dc_gain_db": dc_gain},
-        "monotonicity": {"ok": mono_ok, "n_violations": n_mono_viol,
-                         "band": "1-4 kHz (bins 21..85)"},
+        "gain_range": {"ok": range_ok, "min_db": g_min, "max_db": g_max},
+        "smoothness": {
+            "ok": smooth_ok,
+            "max_step_db": max_step,
+            "n_violations": n_step_viol,
+        },
+        "dc_unity": {"ok": dc_ok, "dc_gain_db": dc_gain},
+        "monotonicity": {
+            "ok": mono_ok,
+            "n_violations": n_mono_viol,
+            "band": f"1-4 kHz (bins {first_bin}..{last_bin})",
+        },
     }
 
     # Optional audiogram comparison.
     if audiogram is not None and len(audiogram) == 7:
         from common.audiogram import Audiogram
-        from common.constants import N_BINS
+
         expected = Audiogram(list(audiogram), label="validation").to_bin_gains()
-        max_err = max(abs(g - e) for g, e in zip(gains_db, expected)) \
-            if expected else 0.0
+        max_err = (
+            max(abs(g - e) for g, e in zip(gains_db, expected)) if expected else 0.0
+        )
         shape_ok = max_err <= 3.0
         checks["audiogram_shape"] = {
             "ok": shape_ok,
@@ -181,9 +190,12 @@ def validate_gain_table(gains_db: List[float],
         "all_passed": all_ok,
         "n_bins": len(gains_db),
         "checks": checks,
-        "summary": ("all checks passed" if all_ok
-                    else f"{sum(1 for c in checks.values() if not c['ok'])} "
-                         f"of {len(checks)} checks failed"),
+        "summary": (
+            "all checks passed"
+            if all_ok
+            else f"{sum(1 for c in checks.values() if not c['ok'])} "
+            f"of {len(checks)} checks failed"
+        ),
     }
 
 
@@ -209,10 +221,17 @@ def _read_gain_file(path: Path) -> List[float]:
 # ---------------------------------------------------------------------------
 def main(argv: List[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Gain-table sanity checker.")
-    p.add_argument("--gain-file", type=Path, required=True,
-                   help="Gain table file (one float per line).")
-    p.add_argument("--audiogram", default=None,
-                   help="Optional 7-value audiogram, e.g. '0,0,10,25,35,40,45'")
+    p.add_argument(
+        "--gain-file",
+        type=Path,
+        required=True,
+        help="Gain table file (one float per line).",
+    )
+    p.add_argument(
+        "--audiogram",
+        default=None,
+        help="Optional 7-value audiogram, e.g. '0,0,10,25,35,40,45'",
+    )
     args = p.parse_args(argv)
 
     gains = _read_gain_file(args.gain_file)

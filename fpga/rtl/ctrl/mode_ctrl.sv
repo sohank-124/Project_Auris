@@ -7,7 +7,7 @@
 //              a full set of default per-bin gain values and pushes them into
 //              the inactive bank of the spectral_proc's dual-port gain-table
 //              BRAM.  When the load is complete, asserts a 1-cycle commit
-//              pulse to atomically swap banks (no glitch in the audio path).
+//              request; waits for frame-boundary acknowledgement before reuse.
 //
 //              Each operating mode ships with a hand-curated 128-bin gain
 //              curve that shapes the audio spectrum appropriately for the
@@ -20,7 +20,7 @@
 //              configuration.  A subsequent `mode_we_i` reloads the table
 //              for the newly-selected mode using the same load/commit FSM.
 //
-//              FSM: ST_IDLE -> ST_LOAD -> ST_COMMIT -> ST_IDLE
+//              FSM: ST_IDLE -> ST_LOAD -> ST_COMMIT -> ST_WAIT -> ST_IDLE
 //
 // Author:      [generated]
 // Created:     2026-07
@@ -38,6 +38,7 @@ module mode_ctrl import auris_pkg::*; #(
     input  wire                rst_n_i,
 
     input  wire [1:0]          mode_i,          // from top-level button FSM
+    input  wire                bank_active_i, // acknowledgement from spectral processor
     input  wire                mode_we_i,       // pulse when mode reg is written
 
     // Streaming write port to gain-table bank BRAM
@@ -57,7 +58,7 @@ module mode_ctrl import auris_pkg::*; #(
     // Per-mode gain tables (Q2.14 fixed-point, 16384 = unity)
     //
     // With Fs = 48 kHz and FFT_LEN = 256 (real input), the FFT produces
-    // GAIN_TABLE_DEPTH = FFT_LEN / 2 = 128 unique bins at 187.5 Hz spacing.
+    // Tables cover bins 0..127 at 187.5 Hz spacing; Nyquist extends bin 127.
     // Each table below is the audio engineering "first cut" for that
     // scenario and ships in silicon so the device produces predictable
     // audio before any host-side tuning is applied.  All tables are
@@ -101,133 +102,64 @@ module mode_ctrl import auris_pkg::*; #(
         16384, 16384, 16384, 16384, 16384, 16384, 16384, 16384
     };
 
-    // -- MODE_SPEECH: vocal presence boost with high-shelf roll-off ----------
-    //   Bins   0-  1: 0.50×  -- suppress sub-bass / handling noise
-    //   Bins   2-  3: 0.75×  -- gentle low-cut above 375 Hz
-    //   Bins   4- 20: 1.75×  -- presence boost on vocal fundamentals
-    //   Bins  21- 31: 1.30×  -- taper above 4 kHz
-    //   Bins  32-127: 0.90×  -- gentle high-shelf roll-off (sibilance taming)
+    // Attenuation-only demonstration profile; bin spacing is 187.5 Hz.
     localparam logic [15:0] GAIN_SPEECH [0:127] = '{
-        // bins  0-  1: 8192  (0.50×) suppress sub-bass / handling noise
-        // bins  2-  3: 12288 (0.75×) gentle low-cut above 375 Hz
-        // bins  4-  7: 28672 (1.75×) presence boost on vocal fundamentals
-         8192,  8192, 12288, 12288, 28672, 28672, 28672, 28672,
-        // bins  8- 15: 28672 (1.75×)
-        28672, 28672, 28672, 28672, 28672, 28672, 28672, 28672,
-        // bins 16- 20: 28672 (1.75×)
-        // bins 21- 23: 21299 (1.30×) taper above 4 kHz
-        28672, 28672, 28672, 28672, 28672, 21299, 21299, 21299,
-        // bins 24- 31: 21299 (1.30×)
-        21299, 21299, 21299, 21299, 21299, 21299, 21299, 21299,
-        // bins 32- 39: 14746 (0.90×) gentle high-shelf roll-off
-        14746, 14746, 14746, 14746, 14746, 14746, 14746, 14746,
-        // bins 40- 47: 14746 (0.90×)
-        14746, 14746, 14746, 14746, 14746, 14746, 14746, 14746,
-        // bins 48- 55: 14746 (0.90×)
-        14746, 14746, 14746, 14746, 14746, 14746, 14746, 14746,
-        // bins 56- 63: 14746 (0.90×)
-        14746, 14746, 14746, 14746, 14746, 14746, 14746, 14746,
-        // bins 64- 71: 14746 (0.90×)
-        14746, 14746, 14746, 14746, 14746, 14746, 14746, 14746,
-        // bins 72- 79: 14746 (0.90×)
-        14746, 14746, 14746, 14746, 14746, 14746, 14746, 14746,
-        // bins 80- 87: 14746 (0.90×)
-        14746, 14746, 14746, 14746, 14746, 14746, 14746, 14746,
-        // bins 88- 95: 14746 (0.90×)
-        14746, 14746, 14746, 14746, 14746, 14746, 14746, 14746,
-        // bins 96-103: 14746 (0.90×)
-        14746, 14746, 14746, 14746, 14746, 14746, 14746, 14746,
-        // bins 104-111: 14746 (0.90×)
-        14746, 14746, 14746, 14746, 14746, 14746, 14746, 14746,
-        // bins 112-119: 14746 (0.90×)
-        14746, 14746, 14746, 14746, 14746, 14746, 14746, 14746,
-        // bins 120-127: 14746 (0.90×)
-        14746, 14746, 14746, 14746, 14746, 14746, 14746, 14746
+        1024, 1024, 4096, 4096, 16384, 16384, 16384, 16384,
+        16384, 16384, 16384, 16384, 16384, 16384, 16384, 16384,
+        16384, 16384, 16384, 16384, 16384, 4096, 4096, 4096,
+        4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024
     };
 
-    // -- MODE_MUSIC: flat mids with sub-bass lift and air shelf ---------------
-    //   Bin    0   : 1.20×  -- gentle DC / sub-bass lift
-    //   Bins   1- 31: 1.00×  -- flat through vocal & instrument range
-    //   Bins  32-127: 1.15×  -- air / sparkle shelf above 6 kHz
+    // Attenuation-only demonstration profile; bin spacing is 187.5 Hz.
     localparam logic [15:0] GAIN_MUSIC [0:127] = '{
-        // bin   0    : 19661 (1.20×) gentle DC / sub-bass lift
-        // bins  1-  7: 16384 (1.00×) flat through vocal & instrument range
-        19661, 16384, 16384, 16384, 16384, 16384, 16384, 16384,
-        // bins  8- 15: 16384 (1.00×)
+        1024, 16384, 16384, 16384, 4096, 4096, 4096, 4096,
+        4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096,
+        4096, 4096, 4096, 4096, 4096, 8192, 8192, 8192,
+        8192, 8192, 8192, 8192, 8192, 8192, 8192, 8192,
         16384, 16384, 16384, 16384, 16384, 16384, 16384, 16384,
-        // bins 16- 23: 16384 (1.00×)
         16384, 16384, 16384, 16384, 16384, 16384, 16384, 16384,
-        // bins 24- 31: 16384 (1.00×)
         16384, 16384, 16384, 16384, 16384, 16384, 16384, 16384,
-        // bins 32- 39: 18841 (1.15×) air / sparkle shelf above 6 kHz
-        18841, 18841, 18841, 18841, 18841, 18841, 18841, 18841,
-        // bins 40- 47: 18841 (1.15×)
-        18841, 18841, 18841, 18841, 18841, 18841, 18841, 18841,
-        // bins 48- 55: 18841 (1.15×)
-        18841, 18841, 18841, 18841, 18841, 18841, 18841, 18841,
-        // bins 56- 63: 18841 (1.15×)
-        18841, 18841, 18841, 18841, 18841, 18841, 18841, 18841,
-        // bins 64- 71: 18841 (1.15×)
-        18841, 18841, 18841, 18841, 18841, 18841, 18841, 18841,
-        // bins 72- 79: 18841 (1.15×)
-        18841, 18841, 18841, 18841, 18841, 18841, 18841, 18841,
-        // bins 80- 87: 18841 (1.15×)
-        18841, 18841, 18841, 18841, 18841, 18841, 18841, 18841,
-        // bins 88- 95: 18841 (1.15×)
-        18841, 18841, 18841, 18841, 18841, 18841, 18841, 18841,
-        // bins 96-103: 18841 (1.15×)
-        18841, 18841, 18841, 18841, 18841, 18841, 18841, 18841,
-        // bins 104-111: 18841 (1.15×)
-        18841, 18841, 18841, 18841, 18841, 18841, 18841, 18841,
-        // bins 112-119: 18841 (1.15×)
-        18841, 18841, 18841, 18841, 18841, 18841, 18841, 18841,
-        // bins 120-127: 18841 (1.15×)
-        18841, 18841, 18841, 18841, 18841, 18841, 18841, 18841
+        16384, 16384, 16384, 16384, 16384, 16384, 16384, 16384,
+        16384, 16384, 16384, 16384, 16384, 16384, 16384, 16384,
+        16384, 16384, 16384, 16384, 16384, 16384, 16384, 16384,
+        16384, 16384, 16384, 16384, 16384, 16384, 16384, 16384,
+        16384, 16384, 16384, 16384, 16384, 16384, 16384, 16384,
+        16384, 16384, 16384, 16384, 16384, 16384, 16384, 16384,
+        16384, 16384, 16384, 16384, 16384, 16384, 16384, 16384,
+        16384, 16384, 16384, 16384, 16384, 16384, 16384, 16384,
+        16384, 16384, 16384, 16384, 16384, 16384, 16384, 16384
     };
 
-    // -- MODE_HEARING: ski-slope HF emphasis for high-frequency loss ----------
-    //   Bins   0-  2: 0.90×  -- mild low-cut to avoid masking
-    //   Bins   3- 10: 1.20×  -- upward slope (mild ski-slope loss)
-    //   Bins  11- 20: 1.60×  -- consonant / speech-intelligibility boost
-    //   Bins  21- 42: 2.00×  -- peak: high-frequency hearing-loss compensation
-    //   Bins  43-127: 1.60×  -- gradual descent above 8 kHz
+    // Attenuation-only demonstration profile; bin spacing is 187.5 Hz.
     localparam logic [15:0] GAIN_HEARING [0:127] = '{
-        // bins  0-  2: 14746 (0.90×) mild low-cut to avoid masking
-        // bins  3-  7: 19661 (1.20×) upward slope (mild ski-slope loss)
-        14746, 14746, 14746, 19661, 19661, 19661, 19661, 19661,
-        // bins  8- 10: 19661 (1.20×)
-        // bins 11- 15: 26214 (1.60×) consonant / speech-intelligibility boost
-        19661, 19661, 19661, 26214, 26214, 26214, 26214, 26214,
-        // bins 16- 20: 26214 (1.60×)
-        // bins 21- 23: 32768 (2.00×) peak: high-frequency hearing-loss comp
-        26214, 26214, 26214, 26214, 26214, 32768, 32768, 32768,
-        // bins 24- 31: 32768 (2.00×)
-        32768, 32768, 32768, 32768, 32768, 32768, 32768, 32768,
-        // bins 32- 39: 32768 (2.00×)
-        32768, 32768, 32768, 32768, 32768, 32768, 32768, 32768,
-        // bins 40- 42: 32768 (2.00×)
-        // bins 43- 47: 26214 (1.60×) gradual descent above 8 kHz
-        32768, 32768, 32768, 26214, 26214, 26214, 26214, 26214,
-        // bins 48- 55: 26214 (1.60×)
-        26214, 26214, 26214, 26214, 26214, 26214, 26214, 26214,
-        // bins 56- 63: 26214 (1.60×)
-        26214, 26214, 26214, 26214, 26214, 26214, 26214, 26214,
-        // bins 64- 71: 26214 (1.60×)
-        26214, 26214, 26214, 26214, 26214, 26214, 26214, 26214,
-        // bins 72- 79: 26214 (1.60×)
-        26214, 26214, 26214, 26214, 26214, 26214, 26214, 26214,
-        // bins 80- 87: 26214 (1.60×)
-        26214, 26214, 26214, 26214, 26214, 26214, 26214, 26214,
-        // bins 88- 95: 26214 (1.60×)
-        26214, 26214, 26214, 26214, 26214, 26214, 26214, 26214,
-        // bins 96-103: 26214 (1.60×)
-        26214, 26214, 26214, 26214, 26214, 26214, 26214, 26214,
-        // bins 104-111: 26214 (1.60×)
-        26214, 26214, 26214, 26214, 26214, 26214, 26214, 26214,
-        // bins 112-119: 26214 (1.60×)
-        26214, 26214, 26214, 26214, 26214, 26214, 26214, 26214,
-        // bins 120-127: 26214 (1.60×)
-        26214, 26214, 26214, 26214, 26214, 26214, 26214, 26214
+        1024, 1024, 1024, 1024, 2048, 2048, 2048, 2048,
+        2048, 2048, 2048, 8192, 8192, 8192, 8192, 8192,
+        8192, 8192, 8192, 8192, 8192, 16384, 16384, 16384,
+        16384, 16384, 16384, 16384, 16384, 16384, 16384, 16384,
+        16384, 16384, 16384, 16384, 16384, 16384, 16384, 16384,
+        16384, 16384, 16384, 8192, 8192, 8192, 8192, 8192,
+        8192, 8192, 8192, 8192, 8192, 8192, 8192, 8192,
+        8192, 8192, 8192, 8192, 8192, 8192, 8192, 8192,
+        8192, 8192, 8192, 8192, 8192, 8192, 8192, 8192,
+        8192, 8192, 8192, 8192, 8192, 8192, 8192, 8192,
+        8192, 8192, 8192, 8192, 8192, 8192, 8192, 8192,
+        8192, 8192, 8192, 8192, 8192, 8192, 8192, 8192,
+        8192, 8192, 8192, 8192, 8192, 8192, 8192, 8192,
+        8192, 8192, 8192, 8192, 8192, 8192, 8192, 8192,
+        8192, 8192, 8192, 8192, 8192, 8192, 8192, 8192,
+        8192, 8192, 8192, 8192, 8192, 8192, 8192, 8192
     };
 
     // -------------------------------------------------------------------------
@@ -241,17 +173,12 @@ module mode_ctrl import auris_pkg::*; #(
         input logic [1:0] mode,
         input int         idx
     );
-        int symmetric_idx;
-        // The real-input FFT requires conjugate bins to receive the same
-        // real gain. Mirror the upper half of the compact table in hardware
-        // so hand-edited tables cannot break Hermitian symmetry.
-        symmetric_idx = (idx > 64) ? (128 - idx) : idx;
         case (mode)
-            MODE_GENERAL: lookup_gain = GAIN_GENERAL[symmetric_idx];
-            MODE_SPEECH:  lookup_gain = GAIN_SPEECH [symmetric_idx];
-            MODE_MUSIC:   lookup_gain = GAIN_MUSIC  [symmetric_idx];
-            MODE_HEARING: lookup_gain = GAIN_HEARING[symmetric_idx];
-            default:      lookup_gain = GAIN_GENERAL[symmetric_idx];
+            MODE_GENERAL: lookup_gain = GAIN_GENERAL[idx];
+            MODE_SPEECH:  lookup_gain = GAIN_SPEECH [idx];
+            MODE_MUSIC:   lookup_gain = GAIN_MUSIC  [idx];
+            MODE_HEARING: lookup_gain = GAIN_HEARING[idx];
+            default:      lookup_gain = GAIN_GENERAL[idx];
         endcase
     endfunction
 
@@ -261,10 +188,12 @@ module mode_ctrl import auris_pkg::*; #(
     typedef enum logic [1:0] {
         ST_IDLE,
         ST_LOAD,
-        ST_COMMIT
+        ST_COMMIT,
+        ST_WAIT
     } state_t;
 
     state_t        state;
+    logic [1:0] requested_mode;
     logic [6:0]    load_idx;
     logic [1:0]    pending_bank;   // bank being written this transaction
     logic          active_bank;    // currently-live bank (0 or 1)
@@ -278,6 +207,7 @@ module mode_ctrl import auris_pkg::*; #(
     always_ff @(posedge clk_i or negedge rst_n_i) begin
         if (!rst_n_i) begin
             state              <= ST_IDLE;
+            requested_mode <= MODE_GENERAL;
             load_idx           <= 7'd0;
             pending_bank       <= 2'd1;   // write to bank B at boot
             active_bank        <= 1'b0;   // bank A live at reset
@@ -297,6 +227,8 @@ module mode_ctrl import auris_pkg::*; #(
             bank_we_o     <= 1'b0;
             bank_commit_o <= 1'b0;
 
+            if (mode_we_i) requested_mode <= mode_i;
+
             case (state)
                 ST_IDLE: begin
                     if (initial_load) begin
@@ -312,10 +244,10 @@ module mode_ctrl import auris_pkg::*; #(
                         load_mode    <= MODE_GENERAL;
                         load_idx     <= 7'd0;
                         state        <= ST_LOAD;
-                    end else if (mode_we_i) begin
+                    end else if (requested_mode != committed_mode) begin
                         // Target the inactive bank (toggle LSB).
                         pending_bank <= active_bank ? 2'd0 : 2'd1;
-                        load_mode    <= mode_i;
+                        load_mode    <= requested_mode;
                         load_idx     <= 7'd0;
                         state        <= ST_LOAD;
                     end
@@ -336,8 +268,7 @@ module mode_ctrl import auris_pkg::*; #(
 
                 ST_COMMIT: begin
                     bank_commit_o <= 1'b1;
-                    active_bank   <= pending_bank[0];
-                    committed_mode<= load_mode;
+
                     case (load_mode)
                         MODE_SPEECH: begin
                             default_master_gain_o <= 24'd17203;
@@ -360,7 +291,15 @@ module mode_ctrl import auris_pkg::*; #(
                             default_gate_ratio_o  <= 24'd12288;
                         end
                     endcase
-                    state         <= ST_IDLE;
+                    state         <= ST_WAIT;
+                end
+
+                ST_WAIT: begin
+                    if (bank_active_i == pending_bank[0]) begin
+                        active_bank <= pending_bank[0];
+                        committed_mode <= load_mode;
+                        state <= ST_IDLE;
+                    end
                 end
 
                 default: state <= ST_IDLE;
@@ -375,7 +314,7 @@ module mode_ctrl import auris_pkg::*; #(
     // relies on that exact width (7-bit index).  Anything else indicates a
     // misconfiguration between this module and auris_pkg.GAIN_TABLE_DEPTH.
     initial begin
-        if (N_BINS != 128) $display("WARNING: mode_ctrl N_BINS=%0d, expected 128", N_BINS);
+        if (N_BINS != 128) $fatal(1, "mode_ctrl requires 128 bins");
     end
 
 endmodule : mode_ctrl

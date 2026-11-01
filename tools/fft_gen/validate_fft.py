@@ -20,7 +20,15 @@ _TOOLS = _HERE.parent
 if str(_TOOLS) not in sys.path:
     sys.path.insert(0, str(_TOOLS))
 
-from common.constants import FS, N_FFT, TOL_PARSEVAL_DB
+from common.constants import FS, N_FFT
+
+
+def _valid_samples(values, length):
+    return len(values) == length and length > 0 and all(
+        math.isfinite(complex(v).real) and math.isfinite(complex(v).imag)
+        for v in values
+    )
+
 try:
     from .gen_fft import reference_dft
 except ImportError:
@@ -31,9 +39,9 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Parseval
 # ---------------------------------------------------------------------------
-def check_parseval(x: List[float],
-                   X: List[complex],
-                   tol: float = 1e-6) -> Tuple[bool, float]:
+def check_parseval(
+    x: List[float], X: List[complex], tol: float = 1e-6
+) -> Tuple[bool, float]:
     """Check Parseval's theorem: sum(|x|^2) = (1/N) * sum(|X|^2).
 
     Returns
@@ -44,16 +52,14 @@ def check_parseval(x: List[float],
     """
     n = len(x)
     if n != len(X):
-        raise ValueError(
-            f"check_parseval: length mismatch (x={n}, X={len(X)})"
-        )
-    if n == 0:
-        return (True, 0.0)
+        raise ValueError(f"check_parseval: length mismatch (x={n}, X={len(X)})")
+    if not _valid_samples(x, n) or not _valid_samples(X, n):
+        return (False, float("inf"))
 
     e_time = sum(float(xi) ** 2 for xi in x)
     e_freq = sum(abs(Xk) ** 2 for Xk in X) / n
     if e_time <= 0:
-        return (True, 0.0)               # trivial (all-zero input)
+        return (e_freq == 0, 0.0 if e_freq == 0 else float("inf"))
 
     ratio = e_freq / e_time
     ratio_db = 10.0 * math.log10(ratio) if ratio > 0 else float("-inf")
@@ -63,8 +69,9 @@ def check_parseval(x: List[float],
 # ---------------------------------------------------------------------------
 # Linearity
 # ---------------------------------------------------------------------------
-def check_linearity(fft_func: Callable[[List[complex]], List[complex]],
-                    n: int = 256) -> Tuple[bool, float]:
+def check_linearity(
+    fft_func: Callable[[List[complex]], List[complex]], n: int = 256
+) -> Tuple[bool, float]:
     """Check FFT linearity: FFT{a*x + b*y} == a*FFT{x} + b*FFT{y}.
 
     ``fft_func`` must take a list of complex samples and return a list
@@ -74,14 +81,16 @@ def check_linearity(fft_func: Callable[[List[complex]], List[complex]],
     if n < 2 or (n & (n - 1)):
         raise ValueError(f"check_linearity: n must be a power of two >= 2 (got {n})")
 
-    x = [1.0] + [0.0] * (n - 1)            # impulse
-    y = [1.0] * n                           # DC
+    x = [1.0] + [0.0] * (n - 1)  # impulse
+    y = [1.0] * n  # DC
     a = complex(0.7, 0.3)
     b = complex(-0.4, 0.9)
 
     lhs = fft_func([a * xi + b * yi for xi, yi in zip(x, y)])
-    rhs = [a * Xk + b * Yk
-           for Xk, Yk in zip(fft_func(x), fft_func(y))]
+    fx, fy = fft_func(x), fft_func(y)
+    if not all(_valid_samples(v, n) for v in (lhs, fx, fy)):
+        return (False, float("inf"))
+    rhs = [a * Xk + b * Yk for Xk, Yk in zip(fx, fy)]
 
     max_dev = 0.0
     for L, R in zip(lhs, rhs):
@@ -95,9 +104,11 @@ def check_linearity(fft_func: Callable[[List[complex]], List[complex]],
 # ---------------------------------------------------------------------------
 # Known signals
 # ---------------------------------------------------------------------------
-def check_known_signal(fft_func: Callable[[List[complex]], List[complex]],
-                       signal_type: str = "sinusoid",
-                       n: int = 256) -> Tuple[bool, float]:
+def check_known_signal(
+    fft_func: Callable[[List[complex]], List[complex]],
+    signal_type: str = "sinusoid",
+    n: int = 256,
+) -> Tuple[bool, float]:
     """Validate the FFT on a known closed-form signal.
 
     Supported signals:
@@ -110,9 +121,7 @@ def check_known_signal(fft_func: Callable[[List[complex]], List[complex]],
       ``X[1] = X[-1] = N/2`` (real form).
     """
     if n < 2 or (n & (n - 1)):
-        raise ValueError(
-            f"check_known_signal: n must be a power of two >= 2 (got {n})"
-        )
+        raise ValueError(f"check_known_signal: n must be a power of two >= 2 (got {n})")
 
     st = signal_type.lower()
     if st == "impulse":
@@ -132,12 +141,14 @@ def check_known_signal(fft_func: Callable[[List[complex]], List[complex]],
         x = [complex(math.cos(2.0 * math.pi * i / n), 0.0) for i in range(n)]
         X = fft_func(x)
         expected = [0j] * n
-        expected[1] = complex(n / 2.0, 0.0)
-        expected[-1] = complex(n / 2.0, 0.0)
+        expected[1] += complex(n / 2.0, 0.0)
+        expected[-1] += complex(n / 2.0, 0.0)
         tol = 1e-6 * n
     else:
         raise ValueError(f"check_known_signal: unknown signal_type {signal_type!r}")
 
+    if not _valid_samples(X, n):
+        return (False, float("inf"))
     max_dev = 0.0
     for Xk, Ek in zip(X, expected):
         d = abs(Xk - Ek)
@@ -149,8 +160,7 @@ def check_known_signal(fft_func: Callable[[List[complex]], List[complex]],
 # ---------------------------------------------------------------------------
 # Bin frequency mapping
 # ---------------------------------------------------------------------------
-def check_bin_frequency_mapping(fs: float = FS,
-                                n_fft: int = N_FFT) -> List[float]:
+def check_bin_frequency_mapping(fs: float = FS, n_fft: int = N_FFT) -> List[float]:
     """Return the list of bin-center frequencies for the given FFT size."""
     return [k * fs / n_fft for k in range(n_fft // 2)]
 
@@ -158,9 +168,9 @@ def check_bin_frequency_mapping(fs: float = FS,
 # ---------------------------------------------------------------------------
 # Aggregate
 # ---------------------------------------------------------------------------
-def validate_all(fft_func: Callable[[List[complex]], List[complex]],
-                 n: int = 256,
-                 fs: float = FS) -> Dict[str, object]:
+def validate_all(
+    fft_func: Callable[[List[complex]], List[complex]], n: int = 256, fs: float = FS
+) -> Dict[str, object]:
     """Run all checks against the supplied FFT function.
 
     ``fft_func`` should have signature
@@ -176,8 +186,9 @@ def validate_all(fft_func: Callable[[List[complex]], List[complex]],
     sinusoid_check = check_known_signal(fft_func, "sinusoid", n=n)
     bin_freqs = check_bin_frequency_mapping(fs=fs, n_fft=n)
 
-    all_ok = all(r[0] for r in (parseval, linearity, impulse_check,
-                                dc_check, sinusoid_check))
+    all_ok = all(
+        r[0] for r in (parseval, linearity, impulse_check, dc_check, sinusoid_check)
+    )
 
     return {
         "parseval": parseval,
@@ -193,8 +204,9 @@ def validate_all(fft_func: Callable[[List[complex]], List[complex]],
 # ---------------------------------------------------------------------------
 # CLI smoke test
 # ---------------------------------------------------------------------------
-def _cli() -> int:                  # pragma: no cover
+def _cli() -> int:  # pragma: no cover
     import argparse
+
     p = argparse.ArgumentParser(description="FFT validator (against reference DFT)")
     p.add_argument("--N", type=int, default=256)
     args = p.parse_args()
@@ -203,8 +215,7 @@ def _cli() -> int:                  # pragma: no cover
     report = validate_all(reference_dft, n=args.N)
     for name, val in report.items():
         if name == "bin_freqs":
-            print(f"  bin_freqs (first 8) = "
-                  f"{[round(f, 1) for f in val[:8]]}  ...")
+            print(f"  bin_freqs (first 8) = {[round(f, 1) for f in val[:8]]}  ...")
             continue
         if name == "all_ok":
             print(f"  all_ok              = {val}")

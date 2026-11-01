@@ -12,6 +12,8 @@ firmware at runtime, no SPI host interface. "Build" in this template
 means Vivado synthesis + implementation + xsim simulation.
 -->
 
+# Pull Request
+
 ## Description
 
 <!--
@@ -55,7 +57,8 @@ new test whenever you add a feature or fix a bug.
 - [ ] `make fpga-sim` passes (or the relevant `fpga/scripts/sim_*.tcl` for the affected TB)
 - [ ] Affected Python tools (`tools/`) run cleanly and produce expected outputs
 - [ ] `markdownlint` passes on touched `.md` files
-- [ ] Manual hardware test on Arty S7-25 (programming the bitstream and verifying STATUS0 heartbeat, mode cycling, audio playback)
+- [ ] Manual hardware test on Arty S7-25 (programming the bitstream and verifying STATUS0 heartbeat, mode cycling, audio
+      playback)
 - [ ] New test added (and linked below)
 
 **Test details:** _e.g. "Added `tb_btn_debounce_edge_test`; runs in 1.2 ms."_

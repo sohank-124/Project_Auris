@@ -27,7 +27,6 @@ if str(_TOOLS) not in sys.path:
     sys.path.insert(0, str(_TOOLS))
 
 from common.constants import LATENCY_TARGET_MS, N_FFT
-from common.formats import write_json
 
 from .compute_latency import (
     LatencyBudget,
@@ -39,9 +38,9 @@ from .compute_latency import (
 # ---------------------------------------------------------------------------
 # Pass / fail
 # ---------------------------------------------------------------------------
-def check_latency_target(budget: LatencyBudget,
-                         target_ms: float = LATENCY_TARGET_MS
-                         ) -> tuple[bool, float]:
+def check_latency_target(
+    budget: LatencyBudget, target_ms: float = LATENCY_TARGET_MS
+) -> tuple[bool, float]:
     """Return ``(passed, margin_ms)``.
 
     ``passed`` is True iff ``budget.total_ms <= target_ms``.  ``margin_ms``
@@ -56,17 +55,16 @@ def check_latency_target(budget: LatencyBudget,
 # Report
 # ---------------------------------------------------------------------------
 def _html_escape(s: str) -> str:
-    return (s.replace("&", "&amp;")
-             .replace("<", "&lt;")
-             .replace(">", "&gt;"))
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def generate_latency_report(theoretical: LatencyBudget,
-                            measured: Optional[dict] = None,
-                            out_path: Optional[Path] = None,
-                            format: str = "json",
-                            target_ms: float = LATENCY_TARGET_MS
-                            ) -> dict:
+def generate_latency_report(
+    theoretical: LatencyBudget,
+    measured: Optional[dict] = None,
+    out_path: Optional[Path] = None,
+    format: str = "json",
+    target_ms: float = LATENCY_TARGET_MS,
+) -> dict:
     """Build a latency report combining theoretical and measured data.
 
     Parameters
@@ -92,13 +90,14 @@ def generate_latency_report(theoretical: LatencyBudget,
     passed, margin = check_latency_target(theoretical, target_ms=target_ms)
     total = max(theoretical.total_ms, 1e-12)
     percentage = {
-        "codec_adc":   100.0 * theoretical.codec_adc_ms / total,
+        "codec_adc": 100.0 * theoretical.codec_adc_ms / total,
         "buffer_fill": 100.0 * theoretical.buffer_fill_ms / total,
-        "fft":         100.0 * theoretical.fft_ms / total,
-        "processing":  100.0 * theoretical.processing_ms / total,
-        "ifft":        100.0 * theoretical.ifft_ms / total,
-        "ola":         100.0 * theoretical.ola_ms / total,
-        "codec_dac":   100.0 * theoretical.codec_dac_ms / total,
+        "fft": 100.0 * theoretical.fft_ms / total,
+        "processing": 100.0 * theoretical.processing_ms / total,
+        "ifft": 100.0 * theoretical.ifft_ms / total,
+        "ola": 100.0 * theoretical.ola_ms / total,
+        "codec_dac": 100.0 * theoretical.codec_dac_ms / total,
+        "output_wait": 100.0 * theoretical.output_wait_ms / total,
     }
     report = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
@@ -110,6 +109,10 @@ def generate_latency_report(theoretical: LatencyBudget,
         "measured": measured,
     }
 
+    report["basis"] = (
+        "Supplied-input model estimate; target verdict is not hardware acceptance"
+    )
+
     if out_path is not None:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         if format == "json":
@@ -118,12 +121,19 @@ def generate_latency_report(theoretical: LatencyBudget,
                 f.write("\n")
         elif format == "html":
             rows = "".join(
-                f"<tr><td>{_html_escape(k)}</td>"
-                f"<td>{theoretical.__dict__[k]:.4f}</td>"
-                f"<td>{percentage[k]:.2f}%</td></tr>"
-                for k in ("codec_adc_ms", "buffer_fill_ms", "fft_ms",
-                          "processing_ms", "ifft_ms", "ola_ms",
-                          "codec_dac_ms")
+                f"<tr><td>{_html_escape(label)}</td>"
+                f"<td>{getattr(theoretical, field):.4f}</td>"
+                f"<td>{percentage[key]:.2f}%</td></tr>"
+                for label, field, key in (
+                    ("codec_adc", "codec_adc_ms", "codec_adc"),
+                    ("buffer_fill", "buffer_fill_ms", "buffer_fill"),
+                    ("fft", "fft_ms", "fft"),
+                    ("processing", "processing_ms", "processing"),
+                    ("ifft", "ifft_ms", "ifft"),
+                    ("ola", "ola_ms", "ola"),
+                    ("codec_dac", "codec_dac_ms", "codec_dac"),
+                    ("output_wait", "output_wait_ms", "output_wait"),
+                )
             )
             measured_html = ""
             if measured is not None:
@@ -144,11 +154,11 @@ td,th{{border:1px solid #ccc;padding:4px 12px;}}
 .failed{{color:red;font-weight:bold;}}
 </style></head><body>
 <h1>Project Auris — Latency report</h1>
-<p>Generated: {_html_escape(report['timestamp'])}</p>
+<p>Generated: {_html_escape(report["timestamp"])}</p>
 <p>Total: <b>{theoretical.total_ms:.4f} ms</b> &mdash;
 Target: <b>{target_ms:.4f} ms</b> &mdash;
-Status: <span class="{'passed' if passed else 'failed'}">
-{'PASS' if passed else 'FAIL'}</span></p>
+Status: <span class="{"passed" if passed else "failed"}">
+{"PASS" if passed else "FAIL"}</span></p>
 <table><thead><tr><th>Stage</th><th>ms</th><th>%</th></tr></thead>
 <tbody>{rows}
 <tr><th>total</th><th>{theoretical.total_ms:.4f}</th>
@@ -160,27 +170,35 @@ Status: <span class="{'passed' if passed else 'failed'}">
                 f.write(html)
         elif format == "txt":
             with open(out_path, "w", encoding="utf-8", newline="\n") as f:
-                f.write(f"Project Auris — Latency report\n")
+                f.write("Project Auris — Latency report\n")
                 f.write(f"Generated: {report['timestamp']}\n")
                 f.write(f"Target: {target_ms:.4f} ms\n")
-                f.write(f"Status: {'PASS' if passed else 'FAIL'} "
-                        f"(margin = {margin:+.4f} ms)\n\n")
+                f.write(
+                    f"Status: {'PASS' if passed else 'FAIL'} "
+                    f"(margin = {margin:+.4f} ms)\n\n"
+                )
                 f.write(format_latency_table(theoretical, target_ms=target_ms))
                 f.write("\n")
                 if measured is not None:
                     f.write("\nMeasured round-trip:\n")
-                    f.write(f"  delay_ms                = "
-                            f"{measured.get('delay_ms', 0):.4f}\n")
-                    f.write(f"  sub_sample_delay_samples = "
-                            f"{measured.get('sub_sample_delay_samples', 0):.3f}\n")
-                    f.write(f"  int_delay_samples        = "
-                            f"{measured.get('int_delay_samples', 0)}\n")
-                    f.write(f"  peak_correlation         = "
-                            f"{measured.get('peak_correlation', 0):.6e}\n")
+                    f.write(
+                        f"  delay_ms                = "
+                        f"{measured.get('delay_ms', 0):.4f}\n"
+                    )
+                    f.write(
+                        f"  sub_sample_delay_samples = "
+                        f"{measured.get('sub_sample_delay_samples', 0):.3f}\n"
+                    )
+                    f.write(
+                        f"  int_delay_samples        = "
+                        f"{measured.get('int_delay_samples', 0)}\n"
+                    )
+                    f.write(
+                        f"  peak_correlation         = "
+                        f"{measured.get('peak_correlation', 0):.6e}\n"
+                    )
         else:
-            raise ValueError(
-                f"generate_latency_report: unknown format {format!r}"
-            )
+            raise ValueError(f"generate_latency_report: unknown format {format!r}")
 
     return report
 
@@ -190,18 +208,24 @@ Status: <span class="{'passed' if passed else 'failed'}">
 # ---------------------------------------------------------------------------
 def main(argv: Optional[list] = None) -> int:
     p = argparse.ArgumentParser(
-        description="Generate a latency report from a theoretical budget.",
+        description="Generate a conditional latency estimate; not hardware acceptance.",
     )
     p.add_argument("--n-fft", type=int, default=N_FFT)
     p.add_argument("--frame-advance", type=int, default=128)
     p.add_argument("--fs", type=float, default=48000.0)
-    p.add_argument("--pipeline-stages", type=int, default=3)
+    p.add_argument("--dsp-clock-hz", type=float, default=96_000_000)
+    p.add_argument("--fft-cycles", type=int, required=True)
+    p.add_argument("--ifft-cycles", type=int, required=True)
+    p.add_argument("--output-wait-samples", type=float, required=True)
     p.add_argument("--codec-delay-ms", type=float, default=0.5)
     p.add_argument("--target-ms", type=float, default=LATENCY_TARGET_MS)
-    p.add_argument("--measured-json", type=Path, default=None,
-                   help="Optional JSON file from measure_roundtrip.")
-    p.add_argument("--format", choices=("json", "html", "txt"),
-                   default="json")
+    p.add_argument(
+        "--measured-json",
+        type=Path,
+        default=None,
+        help="Optional JSON file from measure_roundtrip.",
+    )
+    p.add_argument("--format", choices=("json", "html", "txt"), default="json")
     p.add_argument("--out", type=Path, default=Path("latency_report.json"))
     args = p.parse_args(argv)
 
@@ -209,7 +233,10 @@ def main(argv: Optional[list] = None) -> int:
         n_fft=args.n_fft,
         frame_advance=args.frame_advance,
         fs=args.fs,
-        pipeline_stages=args.pipeline_stages,
+        dsp_clock_hz=args.dsp_clock_hz,
+        fft_cycles=args.fft_cycles,
+        ifft_cycles=args.ifft_cycles,
+        output_wait_samples=args.output_wait_samples,
         codec_delay_ms=args.codec_delay_ms,
     )
     measured = None
@@ -218,8 +245,11 @@ def main(argv: Optional[list] = None) -> int:
             measured = json.load(f)
 
     report = generate_latency_report(
-        budget, measured=measured, out_path=args.out,
-        format=args.format, target_ms=args.target_ms,
+        budget,
+        measured=measured,
+        out_path=args.out,
+        format=args.format,
+        target_ms=args.target_ms,
     )
     print(f"Report written to {args.out}")
     print(f"  total     = {budget.total_ms:.4f} ms")

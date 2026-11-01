@@ -55,57 +55,38 @@ module window_apply import auris_pkg::*; #(
         .data_o(rom_q)
     );
 
-    // -------------------------------------------------------------------------
-    // Sample counter (0..LEN-1): resets on frame_start_i, advances on in_v_i
-    // -------------------------------------------------------------------------
-    always_ff @(posedge clk_i or negedge rst_n_i) begin
-        if (!rst_n_i)            rom_addr <= '0;
-        else if (frame_start_i)  rom_addr <= '0;
-        else if (in_v_i)         rom_addr <= rom_addr + 1'b1;
-    end
-
-    // -------------------------------------------------------------------------
-    // Pipeline stage 1: register ROM output and valid
-    // -------------------------------------------------------------------------
-    logic [WIN_W-1:0] win_reg;
-    logic             in_v_reg;
+    // The ROM and sample register capture the same accepted transaction.
+    logic [$clog2(LEN)-1:0] sample_index;
+    logic signed [15:0] sample_q14;
+    logic sample_valid;
+    logic signed [32:0] product;
+    assign rom_addr = frame_start_i ? '0 : sample_index;
+    assign product = sample_q14 * $signed({1'b0, rom_q});
 
     always_ff @(posedge clk_i or negedge rst_n_i) begin
         if (!rst_n_i) begin
-            win_reg  <= '0;
-            in_v_reg <= 1'b0;
-        end else begin
-            win_reg  <= rom_q;
-            in_v_reg <= in_v_i;
-        end
-    end
-
-    // -------------------------------------------------------------------------
-    // Pipeline stage 2: signed multiply + truncate
-    // -------------------------------------------------------------------------
-    // Q2.14 * Q2.14 = Q4.28.  Take bits [27:12] to get back to Q2.14.
-    // The 16-bit input is taken from the upper 16 bits of the 24-bit
-    // sample (in_l_i[23:8]) — simple truncation.
-    logic signed [15:0] samp_q14;
-    logic signed [15:0] win_q14_s;
-    logic signed [31:0] product;
-
-    assign samp_q14 = in_l_i[23:8];
-    assign win_q14_s = $signed(win_reg);
-    assign product  = samp_q14 * win_q14_s;
-
-    always_ff @(posedge clk_i or negedge rst_n_i) begin
-        if (!rst_n_i) begin
+            sample_index <= '0;
+            sample_q14 <= '0;
+            sample_valid <= 1'b0;
             out_re_o <= '0;
             out_im_o <= '0;
-            out_v_o  <= 1'b0;
+            out_v_o <= 1'b0;
         end else begin
-            out_re_o <= product[27:12];
-            out_im_o <= 16'sd0;   // real-input FFT
-            out_v_o  <= in_v_reg;
+            if (frame_start_i) sample_index <= '0;
+            if (in_v_i) begin
+                sample_index <= (rom_addr == LEN-1) ? '0 : rom_addr + 1'b1;
+                sample_q14 <= $signed(in_l_i[23:8]);
+            end
+            sample_valid <= in_v_i;
+            out_v_o <= sample_valid;
+            out_re_o <= product >>> 14;
+            out_im_o <= '0;
         end
     end
 
+    initial begin
+        if (LEN != 256 || DATA_W != 24 || WIN_W != 16)
+            $fatal(1, "window_apply supports LEN=256 DATA_W=24 WIN_W=16");
+    end
 endmodule : window_apply
-
 `default_nettype wire

@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import math
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple
+from typing import List, Sequence, Tuple
 
 # Make ``python tools/common/audiogram.py`` work from any cwd.
 _TOOLS_DIR = Path(__file__).resolve().parent.parent
@@ -57,9 +57,9 @@ def bin_to_freq(k: int, fs: float = FS, n_fft: int = N_FFT) -> float:
     return k * fs / n_fft
 
 
-def log_freq_interpolate(ref_freqs: Sequence[float],
-                         ref_vals: Sequence[float],
-                         target_freqs: Sequence[float]) -> List[float]:
+def log_freq_interpolate(
+    ref_freqs: Sequence[float], ref_vals: Sequence[float], target_freqs: Sequence[float]
+) -> List[float]:
     """Piecewise-linear interpolation in log10(f) space.
 
     Parameters
@@ -98,7 +98,9 @@ def log_freq_interpolate(ref_freqs: Sequence[float],
 
     for f in ref_freqs:
         if f <= 0:
-            raise ValueError("log_freq_interpolate: ref_freqs must be strictly positive")
+            raise ValueError(
+                "log_freq_interpolate: ref_freqs must be strictly positive"
+            )
 
     # Sort by frequency (and reorder values) in case the caller did not.
     pairs = sorted(zip(ref_freqs, ref_vals), key=lambda p: p[0])
@@ -213,14 +215,10 @@ class Audiogram:
                 f"thresholds, got {len(self.thresholds)}"
             )
         for i, t in enumerate(self.thresholds):
-            if t != t:                            # NaN
-                raise ValueError(
-                    f"Audiogram.validate: threshold {i} is NaN"
-                )
+            if t != t:  # NaN
+                raise ValueError(f"Audiogram.validate: threshold {i} is NaN")
             if t == float("inf") or t == float("-inf"):
-                raise ValueError(
-                    f"Audiogram.validate: threshold {i} is infinite"
-                )
+                raise ValueError(f"Audiogram.validate: threshold {i} is infinite")
             if t < 0.0 or t > 120.0:
                 raise ValueError(
                     f"Audiogram.validate: threshold {i} ({t}) is out of "
@@ -228,9 +226,7 @@ class Audiogram:
                 )
 
     # --------------- conversions
-    def to_insertion_gain(self,
-                          formula: str = "nal_r"
-                          ) -> List[float]:
+    def to_insertion_gain(self, formula: str = "nal_r") -> List[float]:
         """Compute insertion gain in dB at each audiometric frequency.
 
         Delegates to :mod:`tools.profile_gen.fitting_formulas` (imported
@@ -244,16 +240,16 @@ class Audiogram:
             # executed as a script (no parent package context).
             import sys
             from pathlib import Path
+
             tools_dir = Path(__file__).resolve().parent.parent
             if str(tools_dir) not in sys.path:
                 sys.path.insert(0, str(tools_dir))
             from profile_gen.fitting_formulas import compute
         return compute(formula, list(self.thresholds), self.frequencies)
 
-    def to_bin_gains(self,
-                     formula: str = "nal_r",
-                     n_bins: int = N_BINS,
-                     apply_rolloff: bool = True) -> List[float]:
+    def to_bin_gains(
+        self, formula: str = "nal_r", n_bins: int = N_BINS, apply_rolloff: bool = True
+    ) -> List[float]:
         """Convert to a per-bin gain table (dB).
 
         Parameters
@@ -290,30 +286,32 @@ class Audiogram:
             )
 
         # Clamp to the supported gain range.
-        interpolated = [
-            max(GAIN_DB_MIN, min(GAIN_DB_MAX, g)) for g in interpolated
-        ]
+        interpolated = [max(GAIN_DB_MIN, min(GAIN_DB_MAX, g)) for g in interpolated]
         return interpolated
 
 
 # ---------------------------------------------------------------------------
 # CLI smoke test
 # ---------------------------------------------------------------------------
-def _cli() -> None:                 # pragma: no cover
+def _cli() -> None:  # pragma: no cover
     import argparse
+
     p = argparse.ArgumentParser(description="Audiogram utility smoke test")
-    p.add_argument("--audiogram",
-                   default="0,0,10,25,35,40,45",
-                   help="7 dB HL thresholds at 250,500,1k,2k,3k,4k,6k Hz")
-    p.add_argument("--formula", default="nal_r",
-                   choices=("nal_r", "nal_nl2", "dsl_v5"))
+    p.add_argument(
+        "--audiogram",
+        default="0,0,10,25,35,40,45",
+        help="7 dB HL thresholds at 250,500,1k,2k,3k,4k,6k Hz",
+    )
+    p.add_argument("--formula", default="nal_r", choices=("nal_r", "nal_nl2", "dsl_v5"))
     args = p.parse_args()
 
     th = [float(x) for x in args.audiogram.split(",")]
     a = Audiogram(th)
     print(f"Audiogram: {a.thresholds} dB HL  (label={a.label!r})")
-    print(f"Insertion gain ({args.formula}): "
-          f"{[round(g, 2) for g in a.to_insertion_gain(args.formula)]}")
+    print(
+        f"Insertion gain ({args.formula}): "
+        f"{[round(g, 2) for g in a.to_insertion_gain(args.formula)]}"
+    )
     bins = a.to_bin_gains(args.formula)
     print(f"Bin gains (dB, first 16): {[round(g, 2) for g in bins[:16]]}")
 

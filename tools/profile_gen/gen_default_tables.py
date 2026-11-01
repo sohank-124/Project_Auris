@@ -1,23 +1,17 @@
-"""
-Project Auris — Default gain tables for the four operating modes.
+"""Export the four active RTL mode tables exactly.
 
-Each operating mode is mapped to a 128-bin gain table in dB:
-
-* ``general``  — flat 0 dB.
-* ``hearing``  — NAL-R for a "typical" mild high-frequency loss.
-* ``speech``   — +6 dB shelf in 300-3400 Hz, attenuated at the band
-                 edges for noise control.
-* ``bypass``   — flat 0 dB (identical to ``general``; included for
-                 clarity in the mode-select mux).
-
-M19: The .hex output is one 16-bit Q2.14 word per bin (signed,
-two's-complement), not the previous mantissa+shift pair.
+mode_ctrl.sv is authoritative for default hardware gains. These hex/text files
+are inspection exports, not inputs consumed by the current RTL. The standalone
+curve helpers below are experimental profile generators, not default hardware.
 """
 
 from __future__ import annotations
 
 import argparse
 import math
+import re
+import json
+import hashlib
 import sys
 from pathlib import Path
 from typing import Dict, List
@@ -59,25 +53,27 @@ def generate_general_mode(n_bins: int = N_BINS) -> List[float]:
     return [0.0] * n_bins
 
 
-def generate_hearing_mode(audiogram: Audiogram = None,
-                          formula: str = "nal_r",
-                          n_bins: int = N_BINS) -> List[float]:
+def generate_hearing_mode(
+    audiogram: Audiogram = None, formula: str = "nal_r", n_bins: int = N_BINS
+) -> List[float]:
     """NAL-R gain table for the default hearing-loss audiogram."""
     if audiogram is None:
         audiogram = Audiogram(list(DEFAULT_HEARING_AUDIOGRAM_DBHL))
     return audiogram_to_gain_table(audiogram, formula=formula, n_bins=n_bins)
 
 
-def generate_speech_mode(n_bins: int = N_BINS,
-                         fs: float = FS,
-                         n_fft: int = N_FFT,
-                         shelf_db: float = 6.0,
-                         low_cutoff_hz: float = 100.0,
-                         low_atten_db: float = -12.0,
-                         high_cutoff_hz: float = 6000.0,
-                         high_atten_db: float = -6.0,
-                         shelf_low_hz: float = 300.0,
-                         shelf_high_hz: float = 3400.0) -> List[float]:
+def generate_speech_mode(
+    n_bins: int = N_BINS,
+    fs: float = FS,
+    n_fft: int = N_FFT,
+    shelf_db: float = 6.0,
+    low_cutoff_hz: float = 100.0,
+    low_atten_db: float = -12.0,
+    high_cutoff_hz: float = 6000.0,
+    high_atten_db: float = -6.0,
+    shelf_low_hz: float = 300.0,
+    shelf_high_hz: float = 3400.0,
+) -> List[float]:
     """Speech-shaped gain: shelf in the speech band, attenuated elsewhere.
 
     The shape is:
@@ -132,47 +128,79 @@ def generate_bypass_mode(n_bins: int = N_BINS) -> List[float]:
     return [0.0] * n_bins
 
 
+def read_rtl_mode_words(source: Path | None = None) -> tuple[dict[str, list[int]], str]:
+    """Read the deliberately restricted decimal-array syntax; fail on drift."""
+    source = source or _TOOLS.parent / "fpga/rtl/ctrl/mode_ctrl.sv"
+    raw = source.read_bytes()
+    text = re.sub(r"/\*.*?\*/|//[^\n]*", "", raw.decode("utf-8"), flags=re.S)
+    result = {}
+    for mode in ("general", "speech", "music", "hearing"):
+        pattern = (r"localparam\s+logic\s*\[15:0\]\s+GAIN_" + mode.upper()
+                   + r"\s*\[0:127\]\s*=\s*'\{([^}]+)\}\s*;")
+        matches = re.findall(pattern, text)
+        if len(matches) != 1:
+            raise ValueError(f"Expected exactly one 128-word RTL table for {mode}")
+        tokens = [token.strip() for token in matches[0].split(",")]
+        if len(tokens) != 128 or any(not re.fullmatch(r"[0-9]+", t) for t in tokens):
+            raise ValueError(f"Unsupported RTL table syntax or length for {mode}")
+        words = [int(t) for t in tokens]
+        if any(not 0 < word <= 65535 for word in words):
+            raise ValueError(f"Default {mode} words must be positive unsigned 16-bit gains")
+        result[mode] = words
+    return result, hashlib.sha256(raw).hexdigest()
+
+
 # ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
-def generate_all_modes(out_dir: Path,
-                       n_bins: int = N_BINS) -> Dict[str, List[float]]:
+def generate_all_modes(out_dir: Path, n_bins: int = N_BINS) -> Dict[str, List[float]]:
     """Generate all four mode tables and write their .hex / .txt files.
 
     Returns a dict mapping mode name to the corresponding gain table.
     """
+    if n_bins != 128:
+        raise ValueError("Active RTL mode tables require 128 bins")
+    words_by_mode, source_hash = read_rtl_mode_words()
+    tables = {name: [20 * math.log10(word / 16384) for word in words]
+              for name, words in words_by_mode.items()}
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-
-    tables: Dict[str, List[float]] = {
-        "general": generate_general_mode(n_bins),
-        "hearing": generate_hearing_mode(n_bins=n_bins),
-        "speech":  generate_speech_mode(n_bins=n_bins),
-        "bypass":  generate_bypass_mode(n_bins=n_bins),
-    }
 
     for name, gains in tables.items():
         prefix = out_dir / f"gain_table_{name}"
 
-        # M19: pack as one 16-bit Q2.14 word per bin (matches the RTL
-        # gain table, which is 128 x 16 bits, and the SPI REG_GAIN_DATA
-        # payload which is 16 bits wide).
-        q14_words = gain_table_to_fixed(gains)
-        write_hex(q14_words, Path(str(prefix) + ".hex"),
-                  header=f"Mode={name!r}, N={n_bins}, Q2.14 signed")
+        q14_words = words_by_mode[name]
+        write_hex(
+            q14_words,
+            Path(str(prefix) + ".hex"),
+            header=f"Mode={name!r}, N={n_bins}, Q2.14 unsigned; exact RTL export",
+        )
 
         rows = []
         for k, g in enumerate(gains):
-            rows.append({
-                "bin": k,
-                "freq_hz": k * FS / N_FFT,
-                "gain_db": g,
-                "q2_14": q14_words[k],
-            })
-        write_txt_table(rows, Path(str(prefix) + ".txt"),
-                        columns=["bin", "freq_hz", "gain_db", "q2_14"])
+            rows.append(
+                {
+                    "bin": k,
+                    "freq_hz": k * FS / N_FFT,
+                    "gain_db": g,
+                    "q2_14": q14_words[k],
+                }
+            )
+        write_txt_table(
+            rows,
+            Path(str(prefix) + ".txt"),
+            columns=["bin", "freq_hz", "gain_db", "q2_14"],
+        )
         print(f"  wrote {prefix}.hex  ({n_bins} entries, mode={name!r})")
 
+    manifest = {
+        "source": "fpga/rtl/ctrl/mode_ctrl.sv", "source_sha256": source_hash,
+        "format": "unsigned 16-bit Q2.14", "entries_per_mode": 128,
+        "mode_ids": {name: i for i, name in enumerate(words_by_mode)},
+        "role": "RTL inspection exports; current hardware does not load these files",
+    }
+    (out_dir / "gain_tables_manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return tables
 
 
@@ -183,16 +211,18 @@ def main(argv: List[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         description="Generate the four default mode gain tables.",
     )
-    p.add_argument("--out-dir", type=Path,
-                   default=Path("fpga/generated"),
-                   help="Destination directory (default: %(default)s)")
+    p.add_argument(
+        "--out-dir",
+        type=Path,
+        default=_TOOLS.parent / "fpga/generated",
+        help="Destination directory (default: %(default)s)",
+    )
     p.add_argument("--n-bins", type=int, default=N_BINS)
     args = p.parse_args(argv)
 
     print(f"Generating default mode tables into {args.out_dir}...")
     tables = generate_all_modes(args.out_dir, n_bins=args.n_bins)
-    print(f"Generated {len(tables)} mode tables: "
-          f"{', '.join(sorted(tables.keys()))}")
+    print(f"Generated {len(tables)} mode tables: {', '.join(sorted(tables.keys()))}")
     for name, g in tables.items():
         print(f"  {name:8s}  range [{min(g):+5.2f}, {max(g):+5.2f}] dB")
     return 0

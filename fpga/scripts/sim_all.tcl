@@ -44,6 +44,15 @@ foreach a $archived_scripts {
     set sim_scripts [lsearch -all -inline -not -exact $sim_scripts $a]
 }
 
+# An added bench must not silently disappear from the aggregate PASS claim.
+foreach tb [glob -nocomplain -directory [file join $script_dir .. sim testbenches] tb_*.sv] {
+    set stem [string range [file rootname [file tail $tb]] 3 end]
+    set entry [file join $script_dir sim_${stem}.tcl]
+    if {![file exists $entry]} {
+        error "Unregistered active testbench: $tb (missing $entry)"
+    }
+}
+
 puts "============================================================"
 puts "  Project Auris - master sim run"
 puts "  script_dir  = $script_dir"
@@ -74,18 +83,23 @@ foreach s $sim_scripts {
     set tb_name "tb_[string range $name 4 end].sv"
     set tb_path [file normalize [file join $script_dir .. sim testbenches $tb_name]]
     if {![file exists $tb_path]} {
-        puts "  SKIP: testbench not found: $tb_path"
-        lappend results [list $name SKIP "testbench file missing"]
+        puts "  FAILED: testbench not found: $tb_path"
+        lappend results [list $name FAIL "testbench file missing"]
         continue
     }
 
     set start_ms [clock milliseconds]
     set err [catch {
-        source $s
+        apply {{path} {source $path}} $s
     } result]
     set elapsed_ms [expr {[clock milliseconds] - $start_ms}]
 
-    if {$err} {
+    if {$err || $result ne "0"} {
+        # Failed children can leave simulator/project state open. Cleanup must
+        # not replace the original failure or prevent later tests from running.
+        catch {close_sim -force}
+        catch {close_project}
+
         puts ""
         puts "  FAILED: $name (after ${elapsed_ms} ms)"
         puts "  TCL error: $result"
@@ -122,7 +136,7 @@ puts [format "  %d passed, %d failed, %d skipped" $n_pass $n_fail $n_skip]
 puts "============================================================"
 
 # Exit code: non-zero if anything failed. Useful for CI runners.
-if {$n_fail > 0} {
-    return 1
+if {$n_fail > 0 || [llength $results] == 0} {
+    error "Simulation suite failed or no tests discovered"
 }
 return 0

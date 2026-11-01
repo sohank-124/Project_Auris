@@ -103,7 +103,7 @@ if {$do_clean && [file exists $proj_dir]} {
         puts "ERROR: unable to delete existing project directory: $proj_dir"
         puts "ERROR: $delete_err"
         puts "Close any open Vivado project, hardware manager, xsim, or file browser using this directory, then rerun."
-        return 1
+        error "Cannot clean project: $delete_err"
     }
 }
 
@@ -163,6 +163,8 @@ foreach run_name {synth_1 impl_1} {
 # ---------------------------------------------------------------------------
 puts "Adding constraints from $con_dir ..."
 add_files -fileset constrs_1 [glob -directory $con_dir *.xdc]
+# CDC clock queries require the board clocks to exist first.
+set_property PROCESSING_ORDER LATE [get_files cdc_fifo.xdc]
 
 # ---------------------------------------------------------------------------
 # 7. IP cores
@@ -201,40 +203,40 @@ set xfft_cfg [list \
     CONFIG.memory_options_hybrid        {false} \
 ]
 
-# 7b. FFT and IFFT instances
-#     Wipe any previous output directory first: if stale fft_256_core(_N)
-#     subdirs are present, Vivado silently appends a _N suffix to the new
-#     one, which is how dozens of stale versions accumulated here.
-#     The -dir target must exist (create_ip does not create it).
-if {$do_clean} {
-    if {[llength [get_ips -quiet fft_256_core]] > 0} {
-        catch {remove_ip [get_ips fft_256_core]}
+# Register both cores in every project, including a normal cold build.
+# Accept the historical nested layout and the conventional flat layout, but
+# reject ambiguity instead of silently choosing a potentially stale core.
+foreach core_name {fft_256_core ifft_256_core} {
+    if {[llength [get_ips -quiet $core_name]] == 0} {
+        set candidates {}
+        foreach xci [list \
+            [file join $ip_dir $core_name ${core_name}.xci] \
+            [file join $ip_dir $core_name $core_name ${core_name}.xci]] {
+            if {[file exists $xci]} { lappend candidates $xci }
+        }
+        if {[llength $candidates] > 1} {
+            error "Ambiguous IP configurations for $core_name: $candidates"
+        } elseif {[llength $candidates] == 1} {
+            read_ip [lindex $candidates 0]
+        } else {
+            # create_ip adds the module-name directory itself.
+            create_ip -name xfft -vendor xilinx.com -library ip -version 9.1 \
+                -module_name $core_name -dir $ip_dir
+        }
     }
-    file delete -force [file join $ip_dir fft_256_core]
-    file mkdir [file join $ip_dir fft_256_core]
-    create_ip -name xfft -vendor xilinx.com -library ip -version 9.1 \
-        -module_name fft_256_core \
-        -dir [file join $ip_dir fft_256_core]
-    set_property -dict $xfft_cfg [get_ips fft_256_core]
-    generate_target all [get_ips fft_256_core]
-
-    if {[llength [get_ips -quiet ifft_256_core]] > 0} {
-        catch {remove_ip [get_ips ifft_256_core]}
+    set core [get_ips -quiet $core_name]
+    if {[llength $core] != 1} {
+        error "Expected exactly one registered IP named $core_name"
     }
-    file delete -force [file join $ip_dir ifft_256_core]
-    file mkdir [file join $ip_dir ifft_256_core]
-    create_ip -name xfft -vendor xilinx.com -library ip -version 9.1 \
-        -module_name ifft_256_core \
-        -dir [file join $ip_dir ifft_256_core]
-    set_property -dict $xfft_cfg [get_ips ifft_256_core]
-    generate_target all [get_ips ifft_256_core]
-
-    puts "IP generation complete:"
-    puts "  ${ip_dir}/fft_256_core/fft_256_core.xci"
-    puts "  ${ip_dir}/ifft_256_core/ifft_256_core.xci"
-} else {
-    puts "Reusing existing generated FFT/IFFT IP; use --clean to regenerate."
+    if {[get_property IS_LOCKED $core]} {
+        error "IP $core_name is locked; resolve its Vivado/IP version before building"
+    }
+    # Reapply the design contract even when importing a cached configuration.
+    set_property -dict $xfft_cfg $core
+    generate_target all $core
 }
+update_compile_order -fileset sources_1
+puts "FFT and IFFT registered and generated."
 
 # ---------------------------------------------------------------------------
 # 8. Synthesis
@@ -242,11 +244,12 @@ if {$do_clean} {
 puts "Launching synth_1 ..."
 launch_runs synth_1 -jobs $jobs
 wait_on_run synth_1
-set synth_status [get_property PROGRESS [get_runs synth_1]]
-if {$synth_status ne "100%"} {
-    puts "ERROR: synthesis failed (progress = $synth_status)"
+set synth_progress [get_property PROGRESS [get_runs synth_1]]
+set synth_status [get_property STATUS [get_runs synth_1]]
+if {$synth_progress ne "100%" || ![string match "synth_design Complete*" $synth_status]} {
+    puts "ERROR: synthesis failed (progress = $synth_progress, status = $synth_status)"
     puts "See ${proj_dir}/${proj_name}.runs/synth_1/logs/ for details."
-    return 1
+    error "Synthesis did not complete successfully"
 }
 
 # Dump synthesis reports
@@ -262,11 +265,12 @@ close_design
 puts "Launching impl_1 (through write_bitstream) ..."
 launch_runs impl_1 -to_step write_bitstream -jobs $jobs
 wait_on_run impl_1
-set impl_status [get_property PROGRESS [get_runs impl_1]]
-if {$impl_status ne "100%"} {
-    puts "ERROR: implementation failed (progress = $impl_status)"
+set impl_progress [get_property PROGRESS [get_runs impl_1]]
+set impl_status [get_property STATUS [get_runs impl_1]]
+if {$impl_progress ne "100%" || ![string match "write_bitstream Complete*" $impl_status]} {
+    puts "ERROR: implementation failed (progress = $impl_progress, status = $impl_status)"
     puts "See ${proj_dir}/${proj_name}.runs/impl_1/logs/ for details."
-    return 1
+    error "Implementation did not complete successfully"
 }
 
 # Dump implementation reports
@@ -282,6 +286,9 @@ close_design
 # 10. Summary
 # ---------------------------------------------------------------------------
 set bit_path [file join $proj_dir ${proj_name}.runs impl_1 top.bit]
+if {![file exists $bit_path] || [file size $bit_path] == 0} {
+    error "Build completed without a nonempty bitstream: $bit_path"
+}
 puts "============================================================"
 puts "  Build complete."
 puts "  Bitstream : $bit_path"

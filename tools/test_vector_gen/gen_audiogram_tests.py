@@ -17,7 +17,6 @@ toolchain computes the gains through :class:`tools.common.Audiogram`.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 from typing import Dict, List
@@ -36,7 +35,7 @@ from common.constants import (
     GAIN_DB_MAX,
 )
 from common.audiogram import Audiogram
-from common.fixed_point import db_to_q0_14, q2_14_to_float
+from common.fixed_point import db_to_q0_14
 from common.formats import write_json, write_txt_table
 
 
@@ -46,14 +45,14 @@ from common.formats import write_json, write_txt_table
 # Each entry is a 7-element list of dB-HL thresholds measured at the
 # standard audiometric frequencies (250, 500, 1k, 2k, 3k, 4k, 6k Hz).
 REFERENCE_AUDIOGRAMS: Dict[str, List[float]] = {
-    "normal":        [0,  0,  0,  0,  0,  0,  0],
-    "mild_flat":     [20, 20, 20, 20, 20, 20, 20],
-    "mild_hf":       [0,  0, 10, 25, 35, 40, 45],
-    "moderate_hf":   [10, 15, 25, 40, 55, 65, 70],
-    "severe_hf":     [30, 35, 45, 60, 75, 85, 90],
-    "cookie_bite":   [30, 20, 10,  5, 10, 20, 30],
-    "reverse_slope": [50, 40, 30, 20, 10,  5,  0],
-    "noise_notch":   [5,   5, 10, 30, 40, 25, 10],
+    "normal": [0, 0, 0, 0, 0, 0, 0],
+    "mild_flat": [20, 20, 20, 20, 20, 20, 20],
+    "mild_hf": [0, 0, 10, 25, 35, 40, 45],
+    "moderate_hf": [10, 15, 25, 40, 55, 65, 70],
+    "severe_hf": [30, 35, 45, 60, 75, 85, 90],
+    "cookie_bite": [30, 20, 10, 5, 10, 20, 30],
+    "reverse_slope": [50, 40, 30, 20, 10, 5, 0],
+    "noise_notch": [5, 5, 10, 30, 40, 25, 10],
 }
 
 
@@ -76,9 +75,9 @@ def _halfgain_insertion(thresholds: List[float]) -> List[float]:
     return out
 
 
-def generate_audiogram_test(name: str,
-                            audiogram: List[float],
-                            formula: str = "nal_r") -> Dict:
+def generate_audiogram_test(
+    name: str, audiogram: List[float], formula: str = "nal_r"
+) -> Dict:
     """Generate a single audiogram test vector.
 
     Parameters
@@ -113,9 +112,7 @@ def generate_audiogram_test(name: str,
         # formula name is preserved for traceability.
         gains_db = _halfgain_insertion(audiogram)
     else:
-        raise ValueError(
-            f"generate_audiogram_test: unknown formula {formula!r}"
-        )
+        raise ValueError(f"generate_audiogram_test: unknown formula {formula!r}")
 
     q14_pairs = [db_to_q0_14(g) for g in gains_db]
     bin_gains = Audiogram(audiogram, label=name).to_bin_gains(formula)
@@ -155,29 +152,36 @@ def generate_full_test_suite(out_dir: Path) -> List[Dict]:
     for name, th in REFERENCE_AUDIOGRAMS.items():
         suite.append(generate_audiogram_test(name, th, formula="nal_r"))
 
-    write_json({
-        "fs": FS,
-        "n_fft": N_FFT,
-        "n_bins": N_BINS,
-        "formula": "nal_r",
-        "cases": suite,
-    }, out_dir / "audiogram_tests.json")
+    write_json(
+        {
+            "fs": FS,
+            "n_fft": N_FFT,
+            "n_bins": N_BINS,
+            "formula": "nal_r",
+            "cases": suite,
+        },
+        out_dir / "audiogram_tests.json",
+    )
 
     # Human-readable table.
     rows = []
     for c in suite:
         for i, f in enumerate(AUDIOGRAM_FREQS):
-            rows.append({
-                "case": c["name"],
-                "freq_hz": f,
-                "hl_db": c["audiogram"][i],
-                "gain_db": c["expected_gains_db"][i],
-                "q14_mantissa": c["expected_q14"][i]["mantissa"],
-                "q14_shift": c["expected_q14"][i]["shift"],
-            })
-    write_txt_table(rows, out_dir / "audiogram_tests.txt",
-                    columns=["case", "freq_hz", "hl_db", "gain_db",
-                             "q14_mantissa", "q14_shift"])
+            rows.append(
+                {
+                    "case": c["name"],
+                    "freq_hz": f,
+                    "hl_db": c["audiogram"][i],
+                    "gain_db": c["expected_gains_db"][i],
+                    "q14_mantissa": c["expected_q14"][i]["mantissa"],
+                    "q14_shift": c["expected_q14"][i]["shift"],
+                }
+            )
+    write_txt_table(
+        rows,
+        out_dir / "audiogram_tests.txt",
+        columns=["case", "freq_hz", "hl_db", "gain_db", "q14_mantissa", "q14_shift"],
+    )
     return suite
 
 
@@ -188,18 +192,24 @@ def main(argv: List[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         description="Audiogram regression test-vector generator.",
     )
-    p.add_argument("--out-dir", type=Path,
-                   default=Path("audiogram_test_vectors"),
-                   help="Destination directory (default: %(default)s).")
-    p.add_argument("--formula", choices=("nal_r", "nal_nl2", "dsl_v5", "none"),
-                   default="nal_r",
-                   help="Fitting formula (default: %(default)s).")
+    p.add_argument(
+        "--out-dir",
+        type=Path,
+        default=Path("audiogram_test_vectors"),
+        help="Destination directory (default: %(default)s).",
+    )
+    p.add_argument(
+        "--formula",
+        choices=("nal_r", "nal_nl2", "dsl_v5", "none"),
+        default="nal_r",
+        help="Fitting formula (default: %(default)s).",
+    )
     args = p.parse_args(argv)
 
     suite = generate_full_test_suite(args.out_dir)
     print(f"Audiogram test suite written to {args.out_dir}")
     print(f"  audiogram_tests.json  ({len(suite)} cases)")
-    print(f"  audiogram_tests.txt   (per-band table)")
+    print("  audiogram_tests.txt   (per-band table)")
     for c in suite:
         gains = c["expected_gains_db"]
         print(f"  {c['name']:14s} gains={['{:+5.1f}'.format(g) for g in gains]}")

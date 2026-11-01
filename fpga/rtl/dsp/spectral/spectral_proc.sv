@@ -1,34 +1,4 @@
-// =============================================================================
-// File:        spectral_proc.sv
-// Project:     Project Auris — FPGA-Accelerated Assistive Audio
-// Module:      spectral_proc
-// Description: Per-bin frequency-domain processing.  Receives FFT output one
-//              bin at a time (in complex {re, im} format) and applies:
-//
-//                1. Per-bin gain (read from active bank of dual-port BRAM)
-//                2. Master gain (combinational multiply with bin gain)
-//                3. Spectral noise gate (compare |X|^2 with noise_floor;
-//                   if below threshold, scale by gate_ratio)
-//
-//              The gain table is 2 banks x 128 bins x 16 bits.  The SPI
-//              host writes the inactive bank; on bank_commit_i the
-//              active_bank register toggles atomically — no glitch in
-//              the audio path.
-//
-//              Pipeline (4 cycles):
-//                Stage 1: read gain from active bank
-//                Stage 2: effective_gain = bin_gain * master_gain (Q2.14)
-//                Stage 3: compute |X|^2
-//                Stage 4: apply gate, multiply, output
-//
-//              All multiplies are signed Q2.14 with bits [29:14] taken
-//              for the result (truncation, no rounding — acceptable for
-//              MVP).
-//
-// Author:      [generated]
-// Created:     2026-07
-// Clock Domain: CD_DSP (96 MHz)
-// =============================================================================
+// Frame-atomic spectral gains, conjugate-bin mapping, saturating Q14 arithmetic.
 `default_nettype none
 `timescale 1ns / 1ps
 
@@ -45,6 +15,7 @@ module spectral_proc import auris_pkg::*; #(
     input  wire [DATA_W-1:0]       in_im_i,
     input  wire                    in_v_i,
     input  wire                    in_last_i,
+    input  wire [7:0]              fft_exponent_i, // X_stored = X / 2^E
 
     // Streaming complex data to IFFT
     output logic [DATA_W-1:0]      out_re_o,
@@ -63,7 +34,8 @@ module spectral_proc import auris_pkg::*; #(
     input  wire [DATA_W-1:0]       bin_wdata_i,
     input  wire                    bin_we_i,
     input  wire [1:0]              bin_bank_i,
-    input  wire                    bank_commit_i
+    input  wire                    bank_commit_i,
+    output wire                    bank_active_o
 );
 
     // -------------------------------------------------------------------------
@@ -79,67 +51,59 @@ module spectral_proc import auris_pkg::*; #(
         end
     end
 
-    // -------------------------------------------------------------------------
-    // Active bank register
-    // -------------------------------------------------------------------------
-    logic active_bank;
+    // A commit requests ownership transfer; only the first accepted bin
+    // changes the bank. The loader must wait for bank_active_o before reuse.
+    logic active_bank, pending_bank, pending_commit;
+    logic [7:0] bin_idx;
+    logic [15:0] frame_master, frame_noise, frame_ratio;
+    logic [7:0] frame_exponent, exponent_s1, exponent_s2, exponent_s3;
+    wire first_bin = (bin_idx == 0);
+    wire selected_bank = first_bin ?
+        (bank_commit_i ? bin_bank_i[0] : (pending_commit ? pending_bank : active_bank)) : active_bank;
+    wire [7:0] mirrored_bin = (bin_idx > 128) ? (8'd0-bin_idx) : bin_idx;
+    // The 128-word interface has no Nyquist word: explicitly extend bin 127.
+    wire [6:0] gain_address = (mirrored_bin == 128) ? 7'd127 : mirrored_bin[6:0];
+    assign bank_active_o = active_bank;
     always_ff @(posedge clk_i or negedge rst_n_i) begin
-        if (!rst_n_i)            active_bank <= 1'b0;
-        else if (bank_commit_i)  active_bank <= bin_bank_i[0];
-    end
-
-    // -------------------------------------------------------------------------
-    // Gain-table write port (SPI -> inactive bank)
-    // -------------------------------------------------------------------------
-    always_ff @(posedge clk_i) begin
-        if (bin_we_i) begin
-            if (bin_bank_i[0] == 1'b0) gain_bank_a[bin_addr_i] <= bin_wdata_i;
-            else                        gain_bank_b[bin_addr_i] <= bin_wdata_i;
+        if (!rst_n_i) begin
+            active_bank <= 0; pending_bank <= 0; pending_commit <= 0;
+            bin_idx <= 0;
+            frame_master <= 16384; frame_noise <= 0; frame_ratio <= 16384;
+            frame_exponent <= 0;
+        end else begin
+            if (bank_commit_i) begin
+                pending_bank <= bin_bank_i[0];
+                pending_commit <= 1;
+            end
+            if (in_v_i) begin
+                bin_idx <= bin_idx + 1'b1;
+                if (first_bin) begin
+                    active_bank <= selected_bank;
+                    pending_commit <= 0;
+                    frame_master <= master_gain_i;
+                    frame_noise <= noise_floor_i;
+                    frame_ratio <= gate_ratio_i;
+                    frame_exponent <= fft_exponent_i;
+                end
+            end
         end
     end
-
-    // -------------------------------------------------------------------------
-    // Bin counter (tracks FFT bin index, 0..127)
-    // -------------------------------------------------------------------------
-    // Hermitian bin wrapping: The 256-point FFT (natural-order output)
-    // produces bins sequentially:
-    //   bin 0:            DC component (real)
-    //   bins 1..127:      positive frequencies
-    //   bin 128:          Nyquist frequency (real, self-conjugate)
-    //   bins 129..255:    negative frequencies
-    //
-    // For a real input, the FFT obeys X[256-k] = conj(X[k]) for k=1..127.
-    // This module processes all 256 bins with a 7-bit counter (0..127):
-    //
-    //   FFT bin k          Counter    Gain applied
-    //   ------------------------------------------
-    //   0..127              k          gain[k]
-    //   128                 0          gain[0]         (wraps to 0)
-    //   129..255            k-128      gain[k-128]     (wraps into 0..127)
-    //
-    // Equivalently, bin (256-k) for k=1..127 maps to gain[128-k]:
-    //   Y[256-k] = gain[128-k] * X[256-k]
-    //            = gain[128-k] * conj(X[k])      [FFT symmetry]
-    //
-    // For the IFFT to produce real output, Y must also be Hermitian:
-    //   Y[256-k] = conj(Y[k])
-    //            = conj(gain[k] * X[k])
-    //            = gain[k] * conj(X[k])           [gains are real Q2.14]
-    //
-    // Equating the two expressions:
-    //   gain[128-k] = gain[k]    for k = 1..127
-    //
-    // This is a palindromic constraint on gain[1..127]; gain[0] is
-    // unconstrained but applies to both DC (bin 0) and Nyquist (bin 128).
-    //
-    // MVP uses unity gain (trivially satisfies this). Phase 4 per-mode
-    // tables must enforce this symmetry or add a hardware mirror stage
-    // for bins 129..255.
-    logic [ADDR_W-1:0] bin_idx;
-    always_ff @(posedge clk_i or negedge rst_n_i) begin
-        if (!rst_n_i)        bin_idx <= '0;
-        else if (in_v_i)     bin_idx <= bin_idx + 1'b1;
+    always_ff @(posedge clk_i) begin
+        if (rst_n_i && bin_we_i && bin_bank_i[0] != active_bank) begin
+            if (!bin_bank_i[0]) gain_bank_a[bin_addr_i] <= bin_wdata_i;
+            else gain_bank_b[bin_addr_i] <= bin_wdata_i;
+        end
     end
+`ifndef SYNTHESIS
+    always @(posedge clk_i) if (rst_n_i) begin
+        if (bin_we_i && bin_bank_i[0] == active_bank)
+            $fatal(1, "Gain loader attempted to overwrite the active bank");
+        if (in_v_i && ($isunknown(fft_exponent_i) || fft_exponent_i > 16))
+            $fatal(1, "Unsupported or unknown FFT exponent");
+        if (in_v_i && in_last_i != (bin_idx == 255))
+            $fatal(1, "Spectral frame marker mismatch");
+    end
+`endif
 
     // -------------------------------------------------------------------------
     // Pipeline stage 1: read gain from active bank
@@ -147,6 +111,7 @@ module spectral_proc import auris_pkg::*; #(
     logic [DATA_W-1:0] gain_s1;
     logic [DATA_W-1:0] in_re_s1, in_im_s1;
     logic              in_v_s1,  in_last_s1;
+    logic [15:0] master_s1, noise_s1, ratio_s1;
 
     always_ff @(posedge clk_i or negedge rst_n_i) begin
         if (!rst_n_i) begin
@@ -155,25 +120,34 @@ module spectral_proc import auris_pkg::*; #(
             in_im_s1   <= '0;
             in_v_s1    <= 1'b0;
             in_last_s1 <= 1'b0;
+            master_s1 <= '0;
+            noise_s1 <= '0;
+            ratio_s1 <= '0;
+            exponent_s1 <= 0;
         end else begin
-            if (active_bank == 1'b0) gain_s1 <= gain_bank_a[bin_idx];
-            else                     gain_s1 <= gain_bank_b[bin_idx];
+            if (selected_bank == 1'b0) gain_s1 <= gain_bank_a[gain_address];
+            else                     gain_s1 <= gain_bank_b[gain_address];
             in_re_s1   <= in_re_i;
             in_im_s1   <= in_im_i;
             in_v_s1    <= in_v_i;
             in_last_s1 <= in_last_i;
+            master_s1 <= first_bin ? master_gain_i : frame_master;
+            noise_s1 <= first_bin ? noise_floor_i : frame_noise;
+            ratio_s1 <= first_bin ? gate_ratio_i : frame_ratio;
+            exponent_s1 <= first_bin ? fft_exponent_i : frame_exponent;
         end
     end
 
     // -------------------------------------------------------------------------
     // Pipeline stage 2: effective_gain = gain_s1 * master_gain_i (Q2.14)
     // -------------------------------------------------------------------------
-    logic [DATA_W-1:0]        eff_gain_s2;
+    logic [17:0]             eff_gain_s2;
+    logic [15:0]             noise_s2, ratio_s2;
     logic [DATA_W-1:0]        in_re_s2, in_im_s2;
     logic                     in_v_s2,  in_last_s2;
     logic [31:0]              eff_mul;
 
-    assign eff_mul = gain_s1 * master_gain_i;
+    assign eff_mul = gain_s1 * master_s1;
 
     always_ff @(posedge clk_i or negedge rst_n_i) begin
         if (!rst_n_i) begin
@@ -182,8 +156,14 @@ module spectral_proc import auris_pkg::*; #(
             in_im_s2    <= '0;
             in_v_s2     <= 1'b0;
             in_last_s2  <= 1'b0;
+            noise_s2 <= '0;
+            ratio_s2 <= '0;
+            exponent_s2 <= 0;
         end else begin
-            eff_gain_s2 <= eff_mul[29:14];
+            eff_gain_s2 <= eff_mul[31:14];
+            noise_s2 <= noise_s1;
+            ratio_s2 <= ratio_s1;
+            exponent_s2 <= exponent_s1;
             in_re_s2    <= in_re_s1;
             in_im_s2    <= in_im_s1;
             in_v_s2     <= in_v_s1;
@@ -194,10 +174,11 @@ module spectral_proc import auris_pkg::*; #(
     // -------------------------------------------------------------------------
     // Pipeline stage 3: compute |X|^2 = re^2 + im^2
     // -------------------------------------------------------------------------
-    logic signed [31:0] mag_sq_s3;
-    logic [DATA_W-1:0]        eff_gain_s3;
+    logic [31:0] mag_sq_s3;
+    logic [17:0]             eff_gain_s3;
+    logic [19:0]             attenuated_gain_s3;
+    wire [33:0] gate_product = eff_gain_s2 * ratio_s2;
     logic [DATA_W-1:0]        noise_floor_s3;
-    logic [DATA_W-1:0]        gate_ratio_s3;
     logic [DATA_W-1:0]        in_re_s3, in_im_s3;
     logic                     in_v_s3,  in_last_s3;
     logic signed [31:0]       re_sq, im_sq;
@@ -210,7 +191,8 @@ module spectral_proc import auris_pkg::*; #(
             mag_sq_s3   <= '0;
             eff_gain_s3 <= '0;
             noise_floor_s3 <= '0;
-            gate_ratio_s3  <= '0;
+            exponent_s3 <= 0;
+            attenuated_gain_s3 <= '0;
             in_re_s3    <= '0;
             in_im_s3    <= '0;
             in_v_s3     <= 1'b0;
@@ -218,8 +200,9 @@ module spectral_proc import auris_pkg::*; #(
         end else begin
             mag_sq_s3   <= re_sq + im_sq;
             eff_gain_s3 <= eff_gain_s2;
-            noise_floor_s3 <= noise_floor_i;
-            gate_ratio_s3  <= gate_ratio_i;
+            noise_floor_s3 <= noise_s2;
+            exponent_s3 <= exponent_s2;
+            attenuated_gain_s3 <= gate_product[33:14];
             in_re_s3    <= in_re_s2;
             in_im_s3    <= in_im_s2;
             in_v_s3     <= in_v_s2;
@@ -228,35 +211,69 @@ module spectral_proc import auris_pkg::*; #(
     end
 
     // -------------------------------------------------------------------------
-    // Pipeline stage 4: noise gate decision + final multiply
+    // Stages 4..7 isolate restoration, gate selection, multiply and saturation.
+    // Seven registered stages total; throughput remains one bin per clock.
+    // Valid and last follow the same registers as their complex sample.
     // -------------------------------------------------------------------------
-    // If |X|^2 < noise_floor: gated_gain = gate_ratio (attenuated)
-    // Else:                   gated_gain = eff_gain_s3
-    logic [DATA_W-1:0]        gated_gain;
-    logic                     gate_open;
-    logic signed [31:0]       mul_re, mul_im;
-    logic                     gate_mag_is_pos; // mag_sq is unsigned; treat as >=0
+    logic [63:0] restored_power_s4, threshold_power_s4;
+    logic [17:0] eff_gain_s4;
+    logic [19:0] attenuated_gain_s4, gated_gain_s5;
+    logic [DATA_W-1:0] in_re_s4, in_im_s4, in_re_s5, in_im_s5;
+    logic in_v_s4, in_last_s4, in_v_s5, in_last_s5;
+    logic in_v_s6, in_last_s6;
+    logic signed [36:0] mul_re_s6, mul_im_s6;
 
-    // The noise_floor_i is a 16-bit Q2.14 magnitude-squared threshold.
-    // |X|^2 is a 32-bit signed value, but since it's a sum of squares
-    // it is always >= 0.  We compare it as unsigned.
-    assign gate_mag_is_pos = ~mag_sq_s3[31];
-
-    always_comb begin
-        if (gate_mag_is_pos &&
-            ($unsigned(mag_sq_s3) < $unsigned(noise_floor_s3)))
-            gate_open = 1'b0;
-        else
-            gate_open = 1'b1;
+    // Q2.14 power of X/256: preserve the original full-width comparison
+    // without rounding. Supported E<=16 fits the restored power in 64 bits.
+    always_ff @(posedge clk_i or negedge rst_n_i) begin
+        if (!rst_n_i) begin
+            restored_power_s4 <= '0; threshold_power_s4 <= '0;
+            eff_gain_s4 <= '0; attenuated_gain_s4 <= '0;
+            in_re_s4 <= '0; in_im_s4 <= '0;
+            in_v_s4 <= 1'b0; in_last_s4 <= 1'b0;
+        end else begin
+            restored_power_s4 <= {32'b0, mag_sq_s3} << (2 * exponent_s3);
+            threshold_power_s4 <= {18'b0, noise_floor_s3, 30'b0};
+            eff_gain_s4 <= eff_gain_s3;
+            attenuated_gain_s4 <= attenuated_gain_s3;
+            in_re_s4 <= in_re_s3; in_im_s4 <= in_im_s3;
+            in_v_s4 <= in_v_s3; in_last_s4 <= in_last_s3;
+        end
     end
 
-    always_comb begin
-        if (gate_open) gated_gain = eff_gain_s3;
-        else           gated_gain = gate_ratio_s3;
+    always_ff @(posedge clk_i or negedge rst_n_i) begin
+        if (!rst_n_i) begin
+            gated_gain_s5 <= '0;
+            in_re_s5 <= '0; in_im_s5 <= '0;
+            in_v_s5 <= 1'b0; in_last_s5 <= 1'b0;
+        end else begin
+            gated_gain_s5 <= (restored_power_s4 < threshold_power_s4)
+                ? attenuated_gain_s4 : {2'b0, eff_gain_s4};
+            in_re_s5 <= in_re_s4; in_im_s5 <= in_im_s4;
+            in_v_s5 <= in_v_s4; in_last_s5 <= in_last_s4;
+        end
     end
 
-    assign mul_re = $signed(in_re_s3) * $signed({1'b0, gated_gain});
-    assign mul_im = $signed(in_im_s3) * $signed({1'b0, gated_gain});
+    always_ff @(posedge clk_i or negedge rst_n_i) begin
+        if (!rst_n_i) begin
+            mul_re_s6 <= '0; mul_im_s6 <= '0;
+            in_v_s6 <= 1'b0; in_last_s6 <= 1'b0;
+        end else begin
+            mul_re_s6 <= $signed(in_re_s5) * $signed({1'b0, gated_gain_s5});
+            mul_im_s6 <= $signed(in_im_s5) * $signed({1'b0, gated_gain_s5});
+            in_v_s6 <= in_v_s5; in_last_s6 <= in_last_s5;
+        end
+    end
+
+    function automatic logic [15:0] saturate_q14(input logic signed [36:0] product);
+        logic signed [36:0] scaled;
+        begin
+            scaled = product >>> 14;
+            if (scaled > 32767) return 16'h7fff;
+            else if (scaled < -32768) return 16'h8000;
+            else return scaled[15:0];
+        end
+    endfunction
 
     always_ff @(posedge clk_i or negedge rst_n_i) begin
         if (!rst_n_i) begin
@@ -265,10 +282,10 @@ module spectral_proc import auris_pkg::*; #(
             out_v_o   <= 1'b0;
             out_last_o<= 1'b0;
         end else begin
-            out_re_o  <= mul_re[29:14];
-            out_im_o  <= mul_im[29:14];
-            out_v_o   <= in_v_s3;
-            out_last_o<= in_last_s3;
+            out_re_o  <= saturate_q14(mul_re_s6);
+            out_im_o  <= saturate_q14(mul_im_s6);
+            out_v_o   <= in_v_s6;
+            out_last_o<= in_last_s6;
         end
     end
 
@@ -276,8 +293,8 @@ module spectral_proc import auris_pkg::*; #(
     // Synthesis-time sanity
     // -------------------------------------------------------------------------
     initial begin
-        if (N_BINS != 128)
-            $display("WARNING: spectral_proc N_BINS=%0d, expected 128", N_BINS);
+        if (N_BINS != 128 || DATA_W != 16 || ADDR_W != 7)
+            $fatal(1, "spectral_proc supports N_BINS=128 DATA_W=16 ADDR_W=7");
     end
 
 endmodule : spectral_proc

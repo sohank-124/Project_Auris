@@ -59,6 +59,7 @@ module dsp_pipeline import auris_pkg::*; #(
     input  wire                    gain_we_i,
     input  wire [1:0]              gain_bank_i,
     input  wire                    bank_commit_i,
+    output wire                    gain_bank_active_o,
 
     // Telemetry
     output logic [23:0]            peak_in_o,
@@ -106,6 +107,7 @@ module dsp_pipeline import auris_pkg::*; #(
     logic         fft_fifo_valid;
     logic [32:0]   fft_fifo_data;
     logic         fft_fifo_overflow;
+    wire fft_halt, fft_bad_last, ifft_halt, ifft_bad_last;
 
     // -------------------------------------------------------------------------
     // Internal nets — spectral_proc -> ifft_256
@@ -166,7 +168,7 @@ module dsp_pipeline import auris_pkg::*; #(
     // -------------------------------------------------------------------------
     logic [7:0]   fft_blk_exp;
     logic [7:0]   ifft_blk_exp;
-    logic [7:0]   fft_exp_pipe [0:auris_pkg::BFP_PIPE_DELAY-1];
+
     logic [7:0]   fft_exp_aligned;
     logic [7:0]   ola_scale_factor;
 
@@ -186,7 +188,7 @@ module dsp_pipeline import auris_pkg::*; #(
     // -------------------------------------------------------------------------
     logic [23:0]  obuf_l, obuf_r;
     logic         obuf_v;
-    logic         obuf_underflow;
+    logic         obuf_underflow, obuf_overflow;
 
     // -------------------------------------------------------------------------
     // Absolute-value helpers
@@ -255,8 +257,8 @@ module dsp_pipeline import auris_pkg::*; #(
         .m_axis_status_tdata       (),
         .m_axis_status_tvalid      (),
         .event_frame_started       (),
-        .event_tlast_unexpected    (),
-        .event_data_in_channel_halt()
+        .event_tlast_unexpected    (fft_bad_last),
+        .event_data_in_channel_halt(fft_halt)
     );
 
     always_ff @(posedge clk_i or negedge rst_n_i) begin
@@ -273,24 +275,10 @@ module dsp_pipeline import auris_pkg::*; #(
     // pulse fft_tlast for one cycle and wrap the counter to 0.  The
     // xfft IP uses TLAST to delineate 256-sample frames internally;
     // a hard-wired 1'b1 would confuse its bookkeeping.
+    assign fft_tlast = win_v && (fft_sample_cnt == FFT_LEN-1);
     always_ff @(posedge clk_i or negedge rst_n_i) begin
-        if (!rst_n_i) begin
-            fft_sample_cnt <= 8'd0;
-            fft_tlast      <= 1'b0;
-        end else begin
-            if (win_v) begin
-                if (fft_sample_cnt == FFT_LEN - 1) begin
-                    fft_sample_cnt <= 8'd0;
-                    fft_tlast      <= 1'b1;
-                end else begin
-                    fft_sample_cnt <= fft_sample_cnt + 1'b1;
-                    fft_tlast      <= 1'b0;
-                end
-            end else begin
-                // Hold the TLAST pulse for exactly 1 cycle.
-                fft_tlast <= 1'b0;
-            end
-        end
+        if (!rst_n_i) fft_sample_cnt <= 0;
+        else if (win_v) fft_sample_cnt <= fft_sample_cnt + 1'b1;
     end
 
     // -------------------------------------------------------------------------
@@ -317,6 +305,7 @@ module dsp_pipeline import auris_pkg::*; #(
         .in_im_i       (fft_im),
         .in_v_i        (fft_v),
         .in_last_i     (fft_last),
+        .fft_exponent_i(fft_blk_exp),
         .out_re_o      (sp_re),
         .out_im_o      (sp_im),
         .out_v_o       (sp_v),
@@ -329,7 +318,8 @@ module dsp_pipeline import auris_pkg::*; #(
         .bin_wdata_i   (gain_wdata_i),
         .bin_we_i      (gain_we_i),
         .bin_bank_i    (gain_bank_i),
-        .bank_commit_i (bank_commit_i)
+        .bank_commit_i (bank_commit_i),
+        .bank_active_o (gain_bank_active_o)
     );
 
     // -------------------------------------------------------------------------
@@ -352,8 +342,8 @@ module dsp_pipeline import auris_pkg::*; #(
         .m_axis_status_tdata       (),
         .m_axis_status_tvalid      (),
         .event_frame_started       (),
-        .event_tlast_unexpected    (),
-        .event_data_in_channel_halt()
+        .event_tlast_unexpected    (ifft_bad_last),
+        .event_data_in_channel_halt(ifft_halt)
     );
 
     always_ff @(posedge clk_i or negedge rst_n_i) begin
@@ -369,10 +359,12 @@ module dsp_pipeline import auris_pkg::*; #(
     // executable: any future IP/configuration change that deasserts TREADY
     // becomes a simulation failure instead of silent frame corruption.
     always_ff @(posedge clk_i) begin
+        if (rst_n_i && (fft_halt || ifft_halt || fft_bad_last || ifft_bad_last))
+            $fatal(1, "Vendor FFT framing or starvation event");
         if (rst_n_i && fft_fifo_overflow)
-            $error("FFT input elastic buffer overflowed");
+            $fatal(1, "FFT input elastic buffer overflowed");
         if (rst_n_i && ifft_fifo_overflow)
-            $error("IFFT input elastic buffer overflowed");
+            $fatal(1, "IFFT input elastic buffer overflowed");
     end
 `endif
 
@@ -383,40 +375,47 @@ module dsp_pipeline import auris_pkg::*; #(
     // ifft_tlast for one cycle on the 256th sample (index 255).  The
     // xfft IP (IFFT configuration) uses TLAST to mark the end of a
     // 256-sample spectral frame.
+    assign ifft_tlast = sp_v && (ifft_sample_cnt == FFT_LEN-1);
+    always_ff @(posedge clk_i or negedge rst_n_i) begin
+        if (!rst_n_i) ifft_sample_cnt <= 0;
+        else if (sp_v) ifft_sample_cnt <= ifft_sample_cnt + 1'b1;
+    end
+
+    // Frame metadata follows transaction order, never an estimated latency.
+    logic [7:0] fft_output_index, ifft_output_index, held_fft_exp;
+    wire exp_valid, exp_ready, exp_overflow;
+    wire [7:0] queued_fft_exp;
+    wire exp_push = fft_v && (fft_output_index == 0);
+    wire exp_pop = ifft_v && (ifft_output_index == 0);
+    axis_stream_fifo #(.WIDTH(8), .DEPTH(8)) u_exponent_fifo (
+        .clk_i(clk_i), .rst_n_i(rst_n_i),
+        .in_valid_i(exp_push), .in_ready_o(exp_ready), .in_data_i(fft_blk_exp),
+        .out_ready_i(exp_pop), .out_valid_o(exp_valid), .out_data_o(queued_fft_exp),
+        .overflow_o(exp_overflow)
+    );
     always_ff @(posedge clk_i or negedge rst_n_i) begin
         if (!rst_n_i) begin
-            ifft_sample_cnt <= 8'd0;
-            ifft_tlast      <= 1'b0;
+            fft_output_index <= 0;
+            ifft_output_index <= 0;
+            held_fft_exp <= 0;
         end else begin
-            if (sp_v) begin
-                if (ifft_sample_cnt == FFT_LEN - 1) begin
-                    ifft_sample_cnt <= 8'd0;
-                    ifft_tlast      <= 1'b1;
-                end else begin
-                    ifft_sample_cnt <= ifft_sample_cnt + 1'b1;
-                    ifft_tlast      <= 1'b0;
-                end
-            end else begin
-                // Hold the TLAST pulse for exactly 1 cycle.
-                ifft_tlast <= 1'b0;
-            end
+            if (fft_v) fft_output_index <= fft_output_index + 1'b1;
+            if (ifft_v) ifft_output_index <= ifft_output_index + 1'b1;
+            if (exp_pop) held_fft_exp <= queued_fft_exp;
         end
     end
-
-    // -------------------------------------------------------------------------
-    // BFP exponent delay pipeline
-    // -------------------------------------------------------------------------
-    // Shifts fft_blk_exp every cycle to match the IFFT output latency.
-    // Depth = spectral_proc(4) + IFFT pipelined streaming latency (~414).
-    // No async reset — Vivado infers SRL32E shift-register LUTs.
-    always_ff @(posedge clk_i) begin
-        fft_exp_pipe[0] <= fft_blk_exp;
-        for (int i = 1; i < auris_pkg::BFP_PIPE_DELAY; i++)
-            fft_exp_pipe[i] <= fft_exp_pipe[i-1];
-    end
-    assign fft_exp_aligned = fft_exp_pipe[auris_pkg::BFP_PIPE_DELAY-1];
-
+    assign fft_exp_aligned = (ifft_output_index == 0) ? queued_fft_exp : held_fft_exp;
     assign ola_scale_factor = fft_exp_aligned + ifft_blk_exp;
+`ifndef SYNTHESIS
+    always @(posedge clk_i) if (rst_n_i) begin
+        if (exp_pop && !exp_valid) $fatal(1, "Missing FFT exponent");
+        if (exp_overflow) $fatal(1, "FFT exponent queue overflow");
+        if (fft_v && (fft_last != (fft_output_index == 255)))
+            $fatal(1, "FFT output frame marker mismatch");
+        if (ifft_v && (ifft_last != (ifft_output_index == 255)))
+            $fatal(1, "IFFT output frame marker mismatch");
+    end
+`endif
 
     // -------------------------------------------------------------------------
     // Sub-module: overlap_add
@@ -481,7 +480,8 @@ module dsp_pipeline import auris_pkg::*; #(
         .out_l_o        (obuf_l),
         .out_r_o        (obuf_r),
         .out_v_o        (obuf_v),
-        .underflow_o    (obuf_underflow)
+        .underflow_o    (obuf_underflow),
+        .overflow_o     (obuf_overflow)
     );
 
     // -------------------------------------------------------------------------
@@ -520,12 +520,12 @@ module dsp_pipeline import auris_pkg::*; #(
             clip_event_o  <= 1'b0;
         end else begin
             // Peak input: track absolute max of sample_l_i
-            if (sample_valid_i) begin
+            if (sample_valid_i && abs24(sample_l_i) > peak_in_o) begin
                 peak_in_o <= abs24(sample_l_i);
             end
 
             // Peak output: track absolute max of out_l_o
-            if (out_valid_o) begin
+            if (out_valid_o && abs24(out_l_o) > peak_out_o) begin
                 peak_out_o <= abs24(out_l_o);
             end
 
@@ -537,17 +537,17 @@ module dsp_pipeline import auris_pkg::*; #(
             // Error flags collection
             //   bit 0: I2S overflow from input_buffer
             //   bit 1: I2S underflow from output_buffer
-            //   bit 2: FFT overflow (tied to 0 for MVP)
+            //   bit 2: FFT/IFFT FIFO overflow or stream halt
+            //   bit 4: output-buffer block rejected (overflow)
             //   bit 3: frame drop (tied to 0 for MVP)
-            error_flags_o <= {4'b0000,
-                              1'b0,    // FFT overflow (reserved)
-                              obuf_underflow,
-                              1'b0,    // frame drop (reserved)
-                              ibuf_overflow};
+            error_flags_o <= error_flags_o | {3'b0, obuf_overflow,
+                exp_overflow | fft_bad_last | ifft_bad_last,
+                fft_fifo_overflow | ifft_fifo_overflow | fft_halt | ifft_halt,
+                obuf_underflow, ibuf_overflow};
 
             // Clip detection: pulse when |sample_l_i| >= max positive
             // (24'sd8388607 = 0x7FFFFF)
-            if (sample_valid_i && (sample_l_i == 24'sd8388607)) begin
+            if (sample_valid_i && (abs24(sample_l_i) >= 24'd8388607)) begin
                 clip_event_o <= 1'b1;
             end else begin
                 clip_event_o <= 1'b0;
@@ -560,7 +560,7 @@ module dsp_pipeline import auris_pkg::*; #(
     // -------------------------------------------------------------------------
     initial begin
         if (FFT_LEN != 256)
-            $display("WARNING: dsp_pipeline FFT_LEN=%0d, expected 256", FFT_LEN);
+            $fatal(1, "dsp_pipeline requires FFT_LEN=256");
     end
 
 endmodule : dsp_pipeline

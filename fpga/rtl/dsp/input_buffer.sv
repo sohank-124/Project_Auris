@@ -65,21 +65,18 @@ module input_buffer import auris_pkg::*; #(
     logic [7:0] rd_ptr;      // 0..255, next read position
     logic [7:0] read_cnt;    // 0..255, samples read in current burst
     logic       reading;     // high while reading out a burst
-    logic       rd_en;       // gated read enable (stops 1 cycle early)
+    logic       rd_en;       // one read for every count, including 255
 
     // -------------------------------------------------------------------------
     // Combinational read address and enable
     // -------------------------------------------------------------------------
     // The BRAM read is registered (1-cycle latency).  We present the
     // address and enable combinationally; the output appears 1 cycle
-    // later.  rd_en is gated by (reading && read_cnt < 255) so the
-    // final read_cnt=255 cycle does NOT trigger a spurious extra read.
-    always_comb begin
-        rd_en = 1'b0;
-        if (reading && (read_cnt < DEPTH - 1)) begin
-            rd_en = 1'b1;
-        end
-    end
+    // later. Every count 0..255 represents a required read.
+    assign rd_en = reading;
+    logic first_hop, zero_history;
+    logic [2*DATA_W-1:0] read_data;
+    logic zero_read;
 
     // -------------------------------------------------------------------------
     // Storage write port (non-reset — required for BRAM inference)
@@ -91,7 +88,7 @@ module input_buffer import auris_pkg::*; #(
     // `posedge clk_i` block, the synthesizer infers a true dual-port
     // BRAM tile.
     always_ff @(posedge clk_i) begin
-        if (sample_v_i)
+        if (rst_n_i && sample_v_i)
             mem[wr_ptr] <= {sample_r_i, sample_l_i};
     end
 
@@ -101,6 +98,8 @@ module input_buffer import auris_pkg::*; #(
     always_ff @(posedge clk_i or negedge rst_n_i) begin
         if (!rst_n_i) begin
             wr_ptr        <= 8'd0;
+            first_hop     <= 1'b1;
+            zero_history  <= 1'b1;
             hop_cnt       <= 7'd0;
             rd_ptr        <= 8'd0;
             read_cnt      <= 8'd0;
@@ -127,6 +126,8 @@ module input_buffer import auris_pkg::*; #(
                 // End-of-hop: trigger a read burst
                 if (hop_cnt == DEPTH / 2 - 1) begin
                     frame_ready_o <= 1'b1;
+                    zero_history <= first_hop;
+                    first_hop <= 1'b0;
                     reading       <= 1'b1;
                     // The oldest sample is at (wr_ptr + 1) — the next
                     // position to be written, which was filled 256
@@ -159,11 +160,11 @@ module input_buffer import auris_pkg::*; #(
     // -------------------------------------------------------------------------
     // The data output register lives outside the resettable block so the
     // synthesizer maps it to the BRAM output latch.  At power-on the
-    // BRAM contents and this register are both zero (Spartan-7 FF/BRAM
-    // init), so the first valid read still produces correct data.
+    // first frame masks unwritten history explicitly, including after soft reset.
     always_ff @(posedge clk_i) begin
         if (rd_en)
-            {frame_r_o, frame_l_o} <= mem[rd_ptr];
+            read_data <= mem[rd_ptr];
+        zero_read <= zero_history && (read_cnt < DEPTH/2);
     end
 
     // -------------------------------------------------------------------------
@@ -171,6 +172,8 @@ module input_buffer import auris_pkg::*; #(
     // -------------------------------------------------------------------------
     // frame_v_o asserts one cycle after rd_en, matching the BRAM
     // output latency exactly.
+    assign {frame_r_o, frame_l_o} = zero_read ? '0 : read_data;
+
     always_ff @(posedge clk_i or negedge rst_n_i) begin
         if (!rst_n_i) frame_v_o <= 1'b0;
         else          frame_v_o <= rd_en;
@@ -181,7 +184,7 @@ module input_buffer import auris_pkg::*; #(
     // -------------------------------------------------------------------------
     initial begin
         if (DEPTH != 256)
-            $display("WARNING: input_buffer DEPTH=%0d, expected 256", DEPTH);
+            $fatal(1, "input_buffer supports DEPTH=256");
     end
 
 endmodule : input_buffer

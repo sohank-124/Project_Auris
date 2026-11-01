@@ -18,16 +18,16 @@
 #    - 12 MHz oscillator   (Bank 15, 3.3 V, pin F14) — MMCM reference
 #    - 4 LEDs              (Bank 15, 3.3 V) — status heartbeat (LED[0]),
 #                                          clip event (LED[2])
-#    - RGB LED 0           (Bank 15, 3.3 V, active-low) — mode indicator
-#    - 4 pushbuttons       (Bank 15, 3.3 V, active-low) — user input
+#    - RGB LED 0           (Bank 15, 3.3 V, active-high) — mode indicator
+#    - 4 pushbuttons       (Bank 15, 3.3 V, active-high) — user input
 #
 #  Signal-to-pin mapping:
 #    Pmod JA[4..7] : I2S (BCLK, LRCLK, ADC_DATA, DAC_DATA) — FPGA drives
 #                    BCLK + LRCLK, INMP441 drives ADC_DATA, FPGA drives
 #                    DAC_DATA.
 #    Onboard LEDs  : LED[0]=E18 status heartbeat, LED[2]=E13 clip event
-#    Onboard RGB0  : J15/G17/F15 mode indicator (active-low RGB)
-#    Onboard BTNs  : G15/K16/J16/H13 user input (active-low, debounced)
+#    Onboard RGB0  : J15/G17/F15 mode indicator (active-high RGB)
+#    Onboard BTNs  : G15/K16/J16/H13 user input (active-high, debounced)
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -68,7 +68,7 @@ set_property -dict { PACKAGE_PIN E18   IOSTANDARD LVCMOS33 } [get_ports status_l
 set_property -dict { PACKAGE_PIN E13   IOSTANDARD LVCMOS33 } [get_ports status_clip_o];   # LED[2] = E13
 
 # ---------------------------------------------------------------------------
-# 4. Onboard RGB LED 0 (active-low, Bank 15)
+# 4. Onboard RGB LED 0 (active-high, Bank 15)
 #    Mode-dependent colour: General=green, Speech=blue, Music=magenta,
 #    Hearing=red. Self-test uses yellow/cyan/red status overlays.
 # ---------------------------------------------------------------------------
@@ -77,7 +77,7 @@ set_property -dict { PACKAGE_PIN G17   IOSTANDARD LVCMOS33 } [get_ports led_rgb_
 set_property -dict { PACKAGE_PIN F15   IOSTANDARD LVCMOS33 } [get_ports led_rgb_b];       # RGB0-B
 
 # ---------------------------------------------------------------------------
-# 5. Onboard pushbuttons (active-low, Bank 15)
+# 5. Onboard pushbuttons (active-high, Bank 15)
 #    BTN0..BTN3 map to btn_i[0..3].  These are debounced in the FPGA by
 #    btn_debounce.sv before being used as control inputs.
 #
@@ -86,18 +86,18 @@ set_property -dict { PACKAGE_PIN F15   IOSTANDARD LVCMOS33 } [get_ports led_rgb_
 #    LED[1]/LED[2]).  Official Digilent Arty S7-25 Rev. E master XDC:
 #      btn[0]=G15, btn[1]=K16, btn[2]=J16, btn[3]=H13.
 # ---------------------------------------------------------------------------
-set_property -dict { PACKAGE_PIN G15   IOSTANDARD LVCMOS33 } [get_ports {btn_i[0]}];      # BTN0 - active-low
-set_property -dict { PACKAGE_PIN K16   IOSTANDARD LVCMOS33 } [get_ports {btn_i[1]}];      # BTN1 - active-low
-set_property -dict { PACKAGE_PIN J16   IOSTANDARD LVCMOS33 } [get_ports {btn_i[2]}];      # BTN2 - active-low
-set_property -dict { PACKAGE_PIN H13   IOSTANDARD LVCMOS33 } [get_ports {btn_i[3]}];      # BTN3 - active-low
+set_property -dict { PACKAGE_PIN G15   IOSTANDARD LVCMOS33 } [get_ports {btn_i[0]}];      # BTN0 - active-high
+set_property -dict { PACKAGE_PIN K16   IOSTANDARD LVCMOS33 } [get_ports {btn_i[1]}];      # BTN1 - active-high
+set_property -dict { PACKAGE_PIN J16   IOSTANDARD LVCMOS33 } [get_ports {btn_i[2]}];      # BTN2 - active-high
+set_property -dict { PACKAGE_PIN H13   IOSTANDARD LVCMOS33 } [get_ports {btn_i[3]}];      # BTN3 - active-high
 
 # ---------------------------------------------------------------------------
 # 6. Pull-up / pull-down
 #    * i2s_adc_data_i: pulldown holds the line at a defined logic level
 #      while the INMP441 is power-ramping or held in reset, preventing
 #      spurious transitions into the I2S receiver.
-#    * Buttons have external pull-ups on the Arty S7-25 PCB, so no
-#      internal pull-up is required.
+#    * Buttons have external pull-downs on the Arty S7-25 PCB, so no
+#      internal pull-down is required.
 # ---------------------------------------------------------------------------
 set_property PULLDOWN true [get_ports i2s_adc_data_i];
 
@@ -119,64 +119,56 @@ set_property PULLDOWN true [get_ports i2s_adc_data_i];
 #        create_generated_clock so Vivado understands the period and
 #        the parent-child relationship.
 #
-#        NOTE: -divide_by 32 reports 96/32 = 3 MHz (period 333.333 ns).
-#        The actual hardware period is 96/31.25 = 3.072 MHz
-#        (period 325.521 ns).  The ~2.4 % mismatch is bounded by the
-#        +/-10 ns I/O-delay slack and does not affect timing closure,
-#        but it is worth knowing when reading timing reports.
+#        Four BCLK cycles per 125 DSP cycles. The average waveform below
+#        is bounded by explicit uncertainty for the 15/16-cycle halves.
+#        Derivation and external assumptions: docs/hardware/TIMING_CONTRACT.md.
 # ---------------------------------------------------------------------------
 create_clock -name clk_12mhz  -period 83.333  [get_ports clk_12mhz];
 
 create_generated_clock -name i2s_bclk \
     -source [get_pins u_clk_gen/u_mmcm/CLKOUT0] \
-    -divide_by 32 \
+    -multiply_by 4 -divide_by 125 \
     [get_pins u_clk_gen/bufg_bclk/O];
 
-# ---------------------------------------------------------------------------
-# 8. Asynchronous clock domains
-#    Two clock domains are mutually asynchronous from a CDC perspective:
-#      - clk_12mhz family  (board oscillator + MMCM-generated 96 MHz DSP
-#                           clock + bufg_bclk-derived i2s_bclk)
-#      - (no third domain — the SPI SCLK domain has been removed)
-#
-#    Although i2s_bclk is technically derived from the MMCM (and hence
-#    shares a synchronous phase relationship with the DSP clock in
-#    Vivado's eyes), we still mark the groups as asynchronous.  This
-#    tells the tool to skip timing analysis on inter-domain paths and
-#    to trust the CDC structures (Gray-coded pointer FIFOs +
-#    ASYNC_REG attributes) in cdc_i2s_to_dsp and cdc_dsp_to_i2s.
-#
-#    Marking the groups as asynchronous is the conservative, correct
-#    choice: the FIFOs are explicitly designed to handle the
-#    crossing regardless of the underlying phase relationship.
-# ---------------------------------------------------------------------------
-set_clock_groups -asynchronous \
-    -group [get_clocks -include_generated_clocks clk_12mhz] \
-    -group [get_clocks -include_generated_clocks i2s_bclk]
+# Refer external timing to the FPGA clock output, including its routed delay.
+create_generated_clock -name i2s_bclk_forwarded \
+    -source [get_pins u_clk_gen/bufg_bclk/O] -divide_by 1 \
+    [get_ports i2s_bclk_o];
 
+# Fractional phase error spans 0.875 DSP cycles; one cycle bounds it.
+# Setup checks compare different edges. Same-edge internal hold checks do
+# not incur fractional jitter: their common edge displacement cancels.
+set_clock_uncertainty -setup 10.417 [get_clocks {i2s_bclk i2s_bclk_forwarded}];
+set_clock_uncertainty -hold -rise_from [get_clocks i2s_bclk] -fall_to [get_clocks i2s_bclk] 10.417;
+set_clock_uncertainty -hold -fall_from [get_clocks i2s_bclk] -rise_to [get_clocks i2s_bclk] 10.417;
+set_clock_uncertainty -hold -from [get_clocks i2s_bclk] -to [get_clocks i2s_bclk_forwarded] 10.417;
+set_clock_uncertainty -hold -from [get_clocks i2s_bclk_forwarded] -to [get_clocks i2s_bclk] 10.417;
+
+# ---------------------------------------------------------------------------
+# 8. FIFO crossing constraints are in cdc_fifo.xdc.
+# Keep this file free of Tcl control flow: Vivado's XDC reader supports only
+# its constraint command subset. Do not add blanket clock-group exceptions
+# that override the FIFO datapath bounds.
 # ---------------------------------------------------------------------------
 # 9. I/O timing constraints (I2S interface)
 #    The FPGA now drives BCLK and LRCLK; the INMP441 and PCM5102A latch
 #    on those forwarded clocks.  All I/O delays are expressed relative
-#    to the generated i2s_bclk clock.
+#    to the forwarded clock at the FPGA package pin.
 #
-#    * i2s_adc_data_i (INMP441 -> FPGA)
-#        The INMP441 launches data on its BCLK edge; the FPGA samples
-#        it on its own BCLK edge after one BCLK period of flight.
-#        +/-10 ns covers PCB trace skew (~2 ns each direction) plus
-#        INMP441 output delay variation.  The actual data-arrival time
-#        relative to the BCLK edge at the FPGA is dominated by the
-#        INMP441 t_DHT (data hold time after BCLK), which is several
-#        tens of ns — so the constraint is conservative (safe).
-#
-#    * i2s_dac_data_o (FPGA -> PCM5102A)
-#        The PCM5102A samples DAC_DATA on BCLK.  +/-10 ns covers PCB
-#        trace skew and the PCM5102A's setup/hold window at 3.072 MHz.
+#    ASSUMPTIONS to verify on hardware: each external wire flight is 0..2 ns;
+#    microphone falling-edge-to-valid is 0..100 ns (not a datasheet limit).
+#    Input max = 2 clock flight + 100 microphone + 2 return flight = 104 ns.
+#    PCM5102A DIN setup/hold = 8/8 ns; +/-2 ns external differential skew.
+#    LRCLK drives both devices: max setup 8 ns; max hold 20 ns (INMP441).
+#    Output max = setup + skew; output min = -hold - skew.
+#    Board acceptance is conditional on TIMING_CONTRACT.md, not implied by STA.
 # ---------------------------------------------------------------------------
-set_input_delay  -clock [get_clocks i2s_bclk] -max  10.0 [get_ports i2s_adc_data_i];
-set_input_delay  -clock [get_clocks i2s_bclk] -min -10.0 [get_ports i2s_adc_data_i];
-set_output_delay -clock [get_clocks i2s_bclk] -max  10.0 [get_ports i2s_dac_data_o];
-set_output_delay -clock [get_clocks i2s_bclk] -min -10.0 [get_ports i2s_dac_data_o];
+set_input_delay  -clock [get_clocks i2s_bclk_forwarded] -clock_fall -max 104.0 [get_ports i2s_adc_data_i];
+set_input_delay  -clock [get_clocks i2s_bclk_forwarded] -clock_fall -min   0.0 [get_ports i2s_adc_data_i];
+set_output_delay -clock [get_clocks i2s_bclk_forwarded] -max  10.0 [get_ports i2s_dac_data_o];
+set_output_delay -clock [get_clocks i2s_bclk_forwarded] -min -10.0 [get_ports i2s_dac_data_o];
+set_output_delay -clock [get_clocks i2s_bclk_forwarded] -max  10.0 [get_ports i2s_lrclk_o];
+set_output_delay -clock [get_clocks i2s_bclk_forwarded] -min -22.0 [get_ports i2s_lrclk_o];
 
 # ---------------------------------------------------------------------------
 # 10. Output drive strength and slew rate (output ports only)
@@ -189,16 +181,12 @@ set_property SLEW    FAST [get_ports {i2s_dac_data_o}];
 # ---------------------------------------------------------------------------
 # 11. False paths
 #     * LEDs (status, clip, RGB): human-eye timing, no setup/hold requirement.
-#     * i2s_lrclk_o: derived from BCLK by an internal divider; the FF-to-OBUF
-#       path is trivially short at 48 kHz and there is no benefit in having
-#       Vivado optimise its placement.
 #     * btn_i[*]: pushbutton inputs are debounced in btn_debounce.sv before
 #       use, so the input-FF to debounce-FF path is asynchronous to any clock
 #       domain and is not subject to setup/hold constraints.  The external
-#       pull-ups on the Arty S7-25 PCB ensure clean logic levels.
+#       pull-downs on the Arty S7-25 PCB ensure clean logic levels.
 # ---------------------------------------------------------------------------
 set_false_path -to   [get_ports {status_led_o status_clip_o led_rgb_r led_rgb_g led_rgb_b}];
-set_false_path -to   [get_ports {i2s_lrclk_o}];
 set_false_path -from [get_ports {btn_i[*]}];
 
 # ---------------------------------------------------------------------------

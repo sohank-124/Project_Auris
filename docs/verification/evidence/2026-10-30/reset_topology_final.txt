@@ -1,0 +1,152 @@
+INFO: [Common 17-3922] A valid Vivado Design Suite BASIC license has been detected. Your current license is active and will expire on 09-jul-2027.
+#-----------------------------------------------------------
+# Vivado v2026.1 (64-bit)
+# SW Build 6511674 on Tue Jun 16 11:02:23 MDT 2026
+# IP Build 6504888 on Tue Jun 09 09:05:25 MDT 2026
+# SharedData Build 6501428 on Mon Jun 08 17:34:18 MDT 2026
+# Start of session at: Fri Oct 30 18:37:32 2026
+# Process ID         : 62800
+# Current directory  : C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair
+# Command line       : vivado.exe -mode batch -source reset_topology.tcl -log reset_topology_final.log -journal reset_topology_final.jou
+# Log file           : C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/reset_topology_final.log
+# Journal file       : C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair\reset_topology_final.jou
+# Running On         : Sohan_PC
+# Platform           : Windows 11
+# Operating System   : 26200
+# Processor Detail   : Intel(R) Core(TM) Ultra 9 288V
+# CPU Frequency      : 3302 MHz
+# CPU Physical cores : 8
+# CPU Logical cores  : 8
+# Host memory        : 33895 MB
+# Swap memory        : 3311 MB
+# Total Virtual      : 37207 MB
+# Available Virtual  : 6735 MB
+#-----------------------------------------------------------
+source reset_topology.tcl
+# set here [file dirname [file normalize [info script]]]
+# cd $here
+# open_checkpoint [file join $here build_final/auris.runs/impl_1/top_routed.dcp]
+Command: open_checkpoint C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/build_final/auris.runs/impl_1/top_routed.dcp
+
+Starting open_checkpoint Task
+
+Time (s): cpu = 00:00:00 ; elapsed = 00:00:00.031 . Memory (MB): peak = 325.391 ; gain = 0.109
+INFO: [Device 21-403] Loading part xc7s25csga324-1
+Netlist sorting complete. Time (s): cpu = 00:00:00 ; elapsed = 00:00:00.073 . Memory (MB): peak = 790.961 ; gain = 0.000
+INFO: [Netlist 29-17] Analyzing 1082 Unisim elements for replacement
+INFO: [Netlist 29-28] Unisim Transformation completed in 0 CPU seconds
+INFO: [Project 1-479] Netlist was created with Vivado 2026.1
+INFO: [Project 1-570] Preparing netlist for logic optimization
+Read ShapeDB Complete: Time (s): cpu = 00:00:00 ; elapsed = 00:00:00.063 . Memory (MB): peak = 905.832 ; gain = 7.777
+INFO: [Timing 38-478] Restoring timing data from binary archive.
+INFO: [Timing 38-479] Binary timing data restore complete.
+INFO: [Project 1-856] Restoring constraints from binary archive.
+INFO: [Project 1-853] Binary constraint restore complete.
+INFO: [Designutils 20-5722] Start Reading Physical Databases.
+Reading placement.
+Read Netlist Cache: Time (s): cpu = 00:00:00 ; elapsed = 00:00:00.009 . Memory (MB): peak = 1421.387 ; gain = 0.000
+Reading placer database...
+Read Device Cache: Time (s): cpu = 00:00:00 ; elapsed = 00:00:00.006 . Memory (MB): peak = 1421.387 ; gain = 0.000
+Read PlaceDB: Time (s): cpu = 00:00:00 ; elapsed = 00:00:00.001 . Memory (MB): peak = 1421.387 ; gain = 0.000
+Read placeStorage: Time (s): cpu = 00:00:01 ; elapsed = 00:00:00.236 . Memory (MB): peak = 1438.086 ; gain = 16.699
+Read PulsedLatchDB: Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 1438.086 ; gain = 0.000
+Reading routing.
+Read RouteStorage: Time (s): cpu = 00:00:00 ; elapsed = 00:00:00.110 . Memory (MB): peak = 1438.086 ; gain = 0.000
+Read Physdb Files: Time (s): cpu = 00:00:01 ; elapsed = 00:00:00.379 . Memory (MB): peak = 1438.086 ; gain = 16.699
+Restored from archive | CPU: 1.000000 secs | Memory: 0.000000 MB |
+Finished XDEF File Restore: Time (s): cpu = 00:00:01 ; elapsed = 00:00:00.426 . Memory (MB): peak = 1438.086 ; gain = 18.652
+Netlist sorting complete. Time (s): cpu = 00:00:00 ; elapsed = 00:00:00.014 . Memory (MB): peak = 1438.086 ; gain = 0.000
+INFO: [Project 1-111] Unisim Transformation Summary:
+  A total of 108 instances were transformed.
+  RAM32M => RAM32M (RAMD32(x6), RAMS32(x2)): 16 instances
+  RAM64M => RAM64M (RAMD64E(x4)): 20 instances
+  RAM64X1D => RAM64X1D (RAMD64E(x2)): 4 instances
+  RAM64X1S => RAM64X1S (RAMS64E): 62 instances
+  SRLC32E => SRL16E: 6 instances
+
+INFO: [Project 1-604] Checkpoint was created with Vivado v2026.1 (64-bit) build 6511674
+open_checkpoint: Time (s): cpu = 00:00:18 ; elapsed = 00:00:18 . Memory (MB): peak = 1442.102 ; gain = 1123.715
+# set out [open reset_topology.txt w]
+# set async_pins [get_pins -hier -filter {REF_PIN_NAME == CLR || REF_PIN_NAME == PRE}]
+# puts $out "ASYNC_CONTROL_PINS [llength $async_pins]"
+# foreach spec {{u_rst_dsp/u_release 16} {u_rst_i2s/u_release 16} {u_clk_gen/u_bclk_reset 2} {u_clk_gen/u_lrclk_reset 2}} {
+#  lassign $spec prefix stages
+#  set regs [get_cells -hier -filter "NAME =~ $prefix/* && REF_NAME =~ FD*"]
+#  if {[llength $regs] != $stages} {error "Wrong reset stage count $prefix $regs"}
+#  set syncs [get_cells -hier -filter "NAME =~ $prefix/* && REF_NAME =~ FD* && ASYNC_REG == 1"]
+#  if {[llength $syncs]!=2} {error "Expected exactly two synchronizer stages $prefix"}
+#  set sites {}
+#  foreach cell $syncs {
+#   lappend sites [get_property LOC $cell]
+#   puts $out "SYNC_LOCATION $cell LOC=[get_property LOC $cell] BEL=[get_property BEL $cell]"
+#  }
+#  if {[llength [lsort -unique $sites]]!=1} {error "Metastability-catching pair is not co-located $prefix"}
+#  puts $out "RESET_CHAIN $prefix stages=[llength $regs]"
+#  foreach kind {max min} {
+#   set paths [get_timing_paths -from $regs -to $async_pins -delay_type $kind -max_paths 30000 -nworst 1]
+#   set worst 1e9
+#   puts $out "LOCAL_RELEASE $prefix $kind endpoints=[llength $paths]"
+#   foreach path $paths {
+#    set slack [get_property SLACK $path]
+#    if {$slack < $worst} {set worst $slack}
+#    puts $out "[get_property STARTPOINT_PIN $path] -> [get_property ENDPOINT_PIN $path] slack=$slack"
+#   }
+#   puts $out "WORST $prefix $kind $worst"
+#   if {$worst<0} {error "Reset timing failed $prefix $kind"}
+#   report_timing -from $regs -to $async_pins -delay_type $kind -max_paths 5 -path_type full_clock_expanded -file [string map {/ _} $prefix]_${kind}.rpt
+#  }
+# }
+INFO: [Timing 38-78] ReportTimingParams: -from_pins  -to_pins  -max_paths 5 -nworst 1 -delay_type max -sort_by slack.
+INFO: [Timing 38-78] ReportTimingParams: -from_pins  -to_pins  -max_paths 5 -nworst 1 -delay_type min -sort_by slack.
+INFO: [Timing 38-78] ReportTimingParams: -from_pins  -to_pins  -max_paths 5 -nworst 1 -delay_type max -sort_by slack.
+INFO: [Timing 38-78] ReportTimingParams: -from_pins  -to_pins  -max_paths 5 -nworst 1 -delay_type min -sort_by slack.
+INFO: [Timing 38-78] ReportTimingParams: -from_pins  -to_pins  -max_paths 5 -nworst 1 -delay_type max -sort_by slack.
+INFO: [Timing 38-78] ReportTimingParams: -from_pins  -to_pins  -max_paths 5 -nworst 1 -delay_type min -sort_by slack.
+INFO: [Timing 38-78] ReportTimingParams: -from_pins  -to_pins  -max_paths 5 -nworst 1 -delay_type max -sort_by slack.
+INFO: [Timing 38-78] ReportTimingParams: -from_pins  -to_pins  -max_paths 5 -nworst 1 -delay_type min -sort_by slack.
+# set raw [all_fanout -flat -endpoints_only -from [get_pins u_clk_gen/u_mmcm/LOCKED]]
+# set raw_clr 0
+# foreach pin $raw {
+#  puts $out "RAW_LOCKED $pin"
+#  if {[get_property REF_PIN_NAME $pin] in {CLR PRE}} {
+#   incr raw_clr
+#   set cell [get_cells -of_objects $pin]
+#   set allowed 0
+#   foreach owner {u_rst_dsp/u_release u_rst_i2s/u_release u_clk_gen/u_bclk_reset u_clk_gen/u_lrclk_reset} {
+#    if {[string match $owner/* $cell]} {set allowed 1}
+#   }
+#   if {!$allowed || (![string match *sync_pipe_reg* $cell] && ![string match *stretch_pipe_reg* $cell])} {error "Raw LOCKED reaches functional state $cell"}
+#  }
+# }
+# puts $out "RAW_SYNCHRONIZER_CONTROLS $raw_clr"
+# set q_controls 0
+# set inverted_controls 0
+# foreach pin $async_pins {
+#  if {[lsearch -exact $raw $pin]>=0} {continue}
+#  set nets [get_nets -of_objects $pin]
+#  set drivers [get_pins -leaf -of_objects $nets -filter {DIRECTION == OUT}]
+#  if {[llength $drivers]!=1} {error "Ambiguous reset driver $pin $drivers"}
+#  set driver [lindex $drivers 0]
+#  set cell [get_cells -of_objects $driver]
+#  if {![string match FD* [get_property REF_NAME $cell]]} {
+#   # A single-input polarity inverter is glitch-free; a multi-input tree is not
+#   # accepted. Some 7-series reset pins require active-high physical polarity.
+#   if {[get_property REF_NAME $cell] ne "LUT1"} {error "Multi-input/non-FF reset driver $pin <- $driver"}
+#   set init [get_property INIT $cell]
+#   if {$init ni {2'h1 2'h2}} {error "Unexpected reset polarity function $init"}
+#   set inputnet [get_nets -of_objects [get_pins $cell/I0]]
+#   set driver [get_pins -leaf -of_objects $inputnet -filter {DIRECTION == OUT}]
+#   set cell [get_cells -of_objects $driver]
+#   incr inverted_controls
+#  }
+#  if {[llength $driver]!=1 || ![string match FD* [get_property REF_NAME $cell]] || [get_property REF_PIN_NAME $driver] ne "Q"} {error "Reset not sourced by one FF $pin <- $driver"}
+#  incr q_controls
+# }
+# puts $out "FF_SOURCED_RESET_CONTROLS $q_controls single_input_polarity_inverters=$inverted_controls"
+# if {$q_controls+$raw_clr != [llength $async_pins]} {error "Reset coverage accounting mismatch"}
+# close $out
+# puts "F25_RESET_TOPOLOGY_PASS"
+F25_RESET_TOPOLOGY_PASS
+# close_design
+# exit 0
+INFO: [Common 17-206] Exiting Vivado at Fri Oct 30 18:38:00 2026...

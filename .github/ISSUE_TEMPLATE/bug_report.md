@@ -43,13 +43,13 @@ and will be sent back for more information.
 
 <!-- Fill in everything that applies. Use "N/A" if a row is not relevant. -->
 
-| Item                | Value                                |
-|---------------------|--------------------------------------|
-| OS                  | e.g. Ubuntu 24.04, Windows 11, macOS 14 |
-| Vivado version      | e.g. 2024.1 (or "N/A")               |
-| Python version      | e.g. 3.11.9                          |
-| Hardware revision   | e.g. Arty S7-25 Rev. E              |
-| Toolchain extras    | e.g. Verilator 5.020, ruff 0.5.0     |
+| Item              | Value                                   |
+| ----------------- | --------------------------------------- |
+| OS                | e.g. Ubuntu 24.04, Windows 11, macOS 14 |
+| Vivado version    | e.g. 2024.1 (or "N/A")                  |
+| Python version    | e.g. 3.11.9                             |
+| Hardware revision | e.g. Arty S7-25 Rev. E                  |
+| Toolchain extras  | e.g. Verilator 5.020, ruff 0.5.0        |
 
 ## Logs / Screenshots
 

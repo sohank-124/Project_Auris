@@ -26,7 +26,10 @@
 `timescale 1ns/1ps
 
 module tb_mode_ctrl;
+    logic test_done = 1'b0;
     import auris_pkg::*;
+    logic acknowledged_bank = 0;
+
 
     // -------------------------------------------------------------------------
     // DUT signals
@@ -53,10 +56,15 @@ module tb_mode_ctrl;
     // -------------------------------------------------------------------------
     // DUT instance
     // -------------------------------------------------------------------------
+    always @(posedge clk) begin
+        if (!rst_n) acknowledged_bank <= 0;
+        else if (bank_commit) acknowledged_bank <= bank_sel[0];
+    end
     mode_ctrl #(.N_BINS(128)) dut (
         .clk_i                (clk),
         .rst_n_i              (rst_n),
         .mode_i               (mode),
+        .bank_active_i (acknowledged_bank),
         .mode_we_i            (mode_we),
         .bank_we_o            (bank_we),
         .bank_addr_o          (bank_addr),
@@ -315,7 +323,8 @@ module tb_mode_ctrl;
         $display("\n=== tb_mode_ctrl Summary ===");
         $display("Total: %0d  Pass: %0d  Fail: %0d", total_count, pass_count, fail_count);
         if (fail_count == 0) $display("ALL TESTS PASSED");
-        else                 $display("SOME TESTS FAILED");
+        else                 $fatal(1, "SOME TESTS FAILED");
+        test_done = 1'b1;
         $finish;
     end
 
@@ -325,7 +334,7 @@ module tb_mode_ctrl;
     initial begin
         #1_000_000;
         $display("[%0t] TIMEOUT in tb_mode_ctrl", $time);
-        $finish;
+        $fatal(1, "Testbench timeout");
     end
 
 endmodule : tb_mode_ctrl

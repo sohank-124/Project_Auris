@@ -1,0 +1,3 @@
+# Standalone tools add the shared tools directory to sys.path before imports.
+[lint.per-file-ignores]
+"tools/**/*.py" = ["E402"]

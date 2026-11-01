@@ -64,18 +64,9 @@ update_compile_order -fileset sim_1
 # 4. Launch and run
 # ---------------------------------------------------------------------------
 puts "Launching xsim ..."
-launch_simulation
+source [file join $script_dir simulation_common.tcl]
+auris_run_simulation /tb_cdc_fifo/test_done {2 ms}
 
-# 100 us is ~9600 DSP cycles (at 96 MHz) and ~307 BCLK cycles
-# (at 3.072 MHz), plenty to push many write/read sequences through the
-# asynchronous FIFO and observe Gray-coded pointer transitions.
-puts "Running 2 ms ..."
-run 2 ms
-
-# ---------------------------------------------------------------------------
-# 5. Tear down
-# ---------------------------------------------------------------------------
-close_sim -force
 close_project
 
 puts "============================================================"

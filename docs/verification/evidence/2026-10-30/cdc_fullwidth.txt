@@ -1,0 +1,148 @@
+INFO: [Common 17-3922] A valid Vivado Design Suite BASIC license has been detected. Your current license is active and will expire on 09-jul-2027.
+#-----------------------------------------------------------
+# Vivado v2026.1 (64-bit)
+# SW Build 6511674 on Tue Jun 16 11:02:23 MDT 2026
+# IP Build 6504888 on Tue Jun 09 09:05:25 MDT 2026
+# SharedData Build 6501428 on Mon Jun 08 17:34:18 MDT 2026
+# Start of session at: Fri Oct 30 18:47:58 2026
+# Process ID         : 20060
+# Current directory  : C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair
+# Command line       : vivado.exe -mode batch -source cdc_fullwidth.tcl -log cdc_fullwidth.log -journal cdc_fullwidth.jou
+# Log file           : C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/cdc_fullwidth.log
+# Journal file       : C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair\cdc_fullwidth.jou
+# Running On         : Sohan_PC
+# Platform           : Windows 11
+# Operating System   : 26200
+# Processor Detail   : Intel(R) Core(TM) Ultra 9 288V
+# CPU Frequency      : 3302 MHz
+# CPU Physical cores : 8
+# CPU Logical cores  : 8
+# Host memory        : 33895 MB
+# Swap memory        : 3311 MB
+# Total Virtual      : 37207 MB
+# Available Virtual  : 6692 MB
+#-----------------------------------------------------------
+source cdc_fullwidth.tcl
+# set here [file dirname [file normalize [info script]]]
+# set root [file normalize [file join $here ../../..]]
+# cd $here
+# source [file join $root fpga/scripts/simulation_common.tcl]
+## proc auris_run_simulation {completion_path duration} {
+##     set project [current_project]
+##     set log_path [file join [get_property DIRECTORY $project] \
+##         "[get_property NAME $project].sim" sim_1 behav xsim simulate.log]
+##     set_property xsim.elaborate.debug_level typical [get_filesets sim_1]
+##     # Numerical regressions do not need a waveform database of every IP signal.
+##     set_property xsim.simulate.log_all_signals false [get_filesets sim_1]
+##     launch_simulation
+##     run {*}$duration
+##     set done [get_value -radix unsigned $completion_path]
+##     close_sim -force
+##     if {![file exists $log_path]} { error "Missing simulator transcript: $log_path" }
+##     set channel [open $log_path r]
+##     set transcript [read $channel]
+##     close $channel
+##     if {[regexp -nocase {(^|\n)[ \t]*(fatal|error):} $transcript]} {
+##         error "Simulator reported an error: $log_path"
+##     }
+##     if {$done ne "1"} { error "Simulation did not reach successful completion" }
+## }
+# foreach name {cdc_stress} {
+#  create_project -force $name [file join $here fullwidth_sim_$name] -part xc7s25csga324-1
+#  add_files [file join $root fpga/rtl]
+#  add_files -fileset sim_1 [file join $root fpga/sim/testbenches tb_${name}.sv]
+#  set_property top tb_$name [get_filesets sim_1]
+#  set_property xsim.simulate.runtime 0ns [get_filesets sim_1]
+#  update_compile_order -fileset sim_1
+#  if {[catch {auris_run_simulation /tb_$name/test_done {2 ms}} msg]} {puts stderr "FOCUSED_FAIL $name $msg"; exit 1}
+#  close_project
+#  puts "FOCUSED_PASS $name"
+# }
+INFO: [ProjectBase 1-489] The host OS only allows 260 characters in a normal path. The project is stored in a path with more than 80 characters. If you experience issues with IP, Block Designs, or files not being found, please consider moving the project to a location with a shorter path. Alternately consider using the OS subst command to map part of the path to a drive letter.
+Current project path is 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/fullwidth_sim_cdc_stress'
+create_project: Time (s): cpu = 00:00:08 ; elapsed = 00:00:08 . Memory (MB): peak = 582.410 ; gain = 263.078
+Command: launch_simulation  -mode behavioral
+INFO: [Vivado 12-25911] Executing simulation for 'XSim' simulator
+INFO: [Vivado 12-28535] Process started - Fri Oct 30 18:48:11 2026
+
+INFO: [Vivado 12-12493] Simulation top is 'tb_cdc_stress'
+INFO: [Vivado 12-5682] Launching behavioral simulation in 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/fullwidth_sim_cdc_stress/cdc_stress.sim/sim_1/behav/xsim'
+INFO: [SIM-utils-51] Simulation object is 'sim_1'
+INFO: [SIM-utils-72] Using boost library from 'C:/AMDDesignTools/2026.1/Vivado/tps/boost_1_72_0'
+INFO: [SIM-utils-54] Inspecting design source files for 'tb_cdc_stress' in fileset 'sim_1'...
+INFO: [USF-XSim-97] Finding global include files...
+INFO: [USF-XSim-98] Fetching design files from 'sim_1'...
+INFO: [USF-XSim-2] XSim::Compile design
+INFO: [USF-XSim-61] Executing 'COMPILE and ANALYZE' step in 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/fullwidth_sim_cdc_stress/cdc_stress.sim/sim_1/behav/xsim'
+"xvlog --incr --relax -L uvm -prj tb_cdc_stress_vlog.prj"
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/rtl/pkg/auris_pkg.sv" into library xil_defaultlib
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/rtl/cdc/cdc_dsp_to_i2s.sv" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module cdc_dsp_to_i2s
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/rtl/cdc/cdc_i2s_to_dsp.sv" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module cdc_i2s_to_dsp
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/rtl/cdc/reset_release.sv" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module reset_release
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/sim/testbenches/tb_cdc_stress.sv" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module fifo_stress_case
+INFO: [VRFC 10-311] analyzing module tb_cdc_stress
+INFO: [VRFC 10-2263] Analyzing Verilog file "C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/fullwidth_sim_cdc_stress/cdc_stress.sim/sim_1/behav/xsim/glbl.v" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module glbl
+INFO: [USF-XSim-69] 'compile' step finished in '1' seconds
+INFO: [USF-XSim-3] XSim::Elaborate design
+INFO: [USF-XSim-61] Executing 'ELABORATE' step in 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/fullwidth_sim_cdc_stress/cdc_stress.sim/sim_1/behav/xsim'
+"xelab --incr --debug typical --relax --mt 2 -L xil_defaultlib -L uvm -L unisims_ver -L unimacro_ver -L secureip --snapshot tb_cdc_stress_behav xil_defaultlib.tb_cdc_stress xil_defaultlib.glbl -log elaborate.log"
+Vivado Simulator v2026.1
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved.
+Copyright 2022-2026 Advanced Micro Devices, Inc. All Rights Reserved.
+Running: C:/AMDDesignTools/2026.1/Vivado/bin/unwrapped/win64.o/xelab.exe --incr --debug typical --relax --mt 2 -L xil_defaultlib -L uvm -L unisims_ver -L unimacro_ver -L secureip --snapshot tb_cdc_stress_behav xil_defaultlib.tb_cdc_stress xil_defaultlib.glbl -log elaborate.log 
+INFO: [XSIM 43-3493] Using 2 slave threads.
+Starting static elaboration
+Pass Through NonSizing Optimizer
+Completed static elaboration
+Starting simulation data flow analysis
+Completed simulation data flow analysis
+Time Resolution for simulation is 1ps
+Compiling package xil_defaultlib.auris_pkg
+Compiling module xil_defaultlib.reset_release_default
+Compiling module xil_defaultlib.cdc_i2s_to_dsp_default
+Compiling module xil_defaultlib.fifo_stress_case_default
+Compiling module xil_defaultlib.fifo_stress_case(REVERSE=1'b1)
+Compiling module xil_defaultlib.cdc_dsp_to_i2s_default
+Compiling module xil_defaultlib.fifo_stress_case(OUTPUT_FIFO=1'b...
+Compiling module xil_defaultlib.fifo_stress_case(OUTPUT_FIFO=1'b...
+Compiling module xil_defaultlib.tb_cdc_stress
+Compiling module xil_defaultlib.glbl
+Built simulation snapshot tb_cdc_stress_behav
+INFO: [USF-XSim-69] 'elaborate' step finished in '2' seconds
+INFO: [USF-XSim-4] XSim::Simulate design
+INFO: [USF-XSim-61] Executing 'SIMULATE' step in 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/fullwidth_sim_cdc_stress/cdc_stress.sim/sim_1/behav/xsim'
+INFO: [USF-XSim-98] *** Running xsim
+   with args "tb_cdc_stress_behav -key {Behavioral:sim_1:Functional:tb_cdc_stress} -tclbatch {tb_cdc_stress.tcl} -log {simulate.log}"
+INFO: [USF-XSim-8] Loading simulator feature
+Time resolution is 1 ps
+source tb_cdc_stress.tcl
+## set curr_wave [current_wave_config]
+## if { [string length $curr_wave] == 0 } {
+##   if { [llength [get_objects]] > 0} {
+##     add_wave /
+##     set_property needs_save false [current_wave_config]
+##   } else {
+##      send_msg_id Add_Wave-1 WARNING "No top level signals found. Simulator will start without a wave window. If you want to open a wave window go to 'File->New Waveform Configuration' or type 'create_wave_config' in the TCL console."
+##   }
+## }
+## run 0ns
+INFO: [USF-XSim-96] XSim completed. Design snapshot 'tb_cdc_stress_behav' loaded.
+INFO: [USF-XSim-97] XSim simulation ran for 0ns
+launch_simulation: Time (s): cpu = 00:00:00 ; elapsed = 00:00:06 . Memory (MB): peak = 604.137 ; gain = 21.727
+CDC_STRESS_CASE 0 writes=858 reads=834 rejected_full=27227 empty_reads=56
+CDC_STRESS_CASE 1 writes=893 reads=893 rejected_full=0 empty_reads=27179
+CDC_STRESS_CASE 2 writes=858 reads=834 rejected_full=27227 empty_reads=56
+CDC_STRESS_CASE 3 writes=893 reads=893 rejected_full=0 empty_reads=27179
+CDC_STRESS_PASS cases=4 epochs=12 resets_occupied=6 drains=6 full_24bit_coverage=1
+$finish called at time : 318892840 ps : File "C:/Users/sohan/CODE/Project_Auris/fpga/sim/testbenches/tb_cdc_stress.sv" Line 91
+INFO: [Simtcl 6-16] Simulation closed
+FOCUSED_PASS cdc_stress
+# puts "F25_CDC_FULLWIDTH_PASS"
+F25_CDC_FULLWIDTH_PASS
+# exit 0
+INFO: [Common 17-206] Exiting Vivado at Fri Oct 30 18:48:18 2026...

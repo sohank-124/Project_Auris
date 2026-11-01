@@ -27,6 +27,7 @@ from typing import Dict, List, Tuple
 # Make ``python tools/profile_gen/fitting_formulas.py`` work from any cwd.
 from pathlib import Path as _Path
 import sys as _sys
+
 _TOOLS_DIR = _Path(__file__).resolve().parent.parent
 if str(_TOOLS_DIR) not in _sys.path:
     _sys.path.insert(0, str(_TOOLS_DIR))
@@ -48,9 +49,7 @@ def _pta3(thresholds: List[float]) -> float:
     return (thresholds[1] + thresholds[2] + thresholds[3]) / 3.0
 
 
-def _clamp(g: float,
-           lo: float = GAIN_DB_MIN,
-           hi: float = GAIN_DB_MAX) -> float:
+def _clamp(g: float, lo: float = GAIN_DB_MIN, hi: float = GAIN_DB_MAX) -> float:
     if g < lo:
         return lo
     if g > hi:
@@ -63,41 +62,62 @@ def _clamp(g: float,
 # ---------------------------------------------------------------------------
 # NAL-R frequency-specific correction (X) values in dB.
 _NAL_R_OFFSETS: Dict[int, float] = {
-    250:  -17.0,
-    500:   -8.0,
-    1000:   1.0,
-    2000:  -1.0,
-    3000:  -4.0,
-    4000:  -6.0,
-    6000:  -3.0,
+    250: -17.0,
+    500: -8.0,
+    1000: 1.0,
+    2000: -1.0,
+    3000: -4.0,
+    4000: -6.0,
+    6000: -3.0,
 }
 
 # NAL-NL2 frequency-specific weights (simplified scalar form).
 _NAL_NL2_A: Dict[int, float] = {
-    250:  0.30, 500: 0.35, 1000: 0.38, 2000: 0.40,
-    3000: 0.42, 4000: 0.40, 6000: 0.35,
+    250: 0.30,
+    500: 0.35,
+    1000: 0.38,
+    2000: 0.40,
+    3000: 0.42,
+    4000: 0.40,
+    6000: 0.35,
 }
 _NAL_NL2_B: Dict[int, float] = {
-    250:  0.10, 500: 0.12, 1000: 0.10, 2000: 0.08,
-    3000: 0.06, 4000: 0.05, 6000: 0.04,
+    250: 0.10,
+    500: 0.12,
+    1000: 0.10,
+    2000: 0.08,
+    3000: 0.06,
+    4000: 0.05,
+    6000: 0.04,
 }
 _NAL_NL2_C: Dict[int, float] = {
-    250:  -5.0, 500: -2.0, 1000:  0.0, 2000: -1.0,
-    3000: -3.0, 4000: -4.0, 6000: -3.0,
+    250: -5.0,
+    500: -2.0,
+    1000: 0.0,
+    2000: -1.0,
+    3000: -3.0,
+    4000: -4.0,
+    6000: -3.0,
 }
 
 # DSL v5 frequency-specific correction terms in dB.
 _DSL_V5_CORRECTION: Dict[int, float] = {
-    250:  -5.0, 500:  0.0, 1000:  2.0, 2000:  3.0,
-    3000:  2.0, 4000:  0.0, 6000: -2.0,
+    250: -5.0,
+    500: 0.0,
+    1000: 2.0,
+    2000: 3.0,
+    3000: 2.0,
+    4000: 0.0,
+    6000: -2.0,
 }
 
 
 # ---------------------------------------------------------------------------
 # Formulas
 # ---------------------------------------------------------------------------
-def nal_r(thresholds: List[float],
-          freqs: Tuple[int, ...] = AUDIOGRAM_FREQS) -> List[float]:
+def nal_r(
+    thresholds: List[float], freqs: Tuple[int, ...] = AUDIOGRAM_FREQS
+) -> List[float]:
     """NAL-R insertion gain with the half-gain rule.
 
     gain[i] = 0.5 * (0.46 * HL[i] + 0.46 * PTA3 + X[f_i])
@@ -118,8 +138,9 @@ def nal_r(thresholds: List[float],
     return gains
 
 
-def nal_nl2(thresholds: List[float],
-            freqs: Tuple[int, ...] = AUDIOGRAM_FREQS) -> List[float]:
+def nal_nl2(
+    thresholds: List[float], freqs: Tuple[int, ...] = AUDIOGRAM_FREQS
+) -> List[float]:
     """Simplified scalar NAL-NL2 formula.
 
     gain[i] = a[f_i] * HL[i] + b[f_i] * PTA + c[f_i]
@@ -143,8 +164,9 @@ def nal_nl2(thresholds: List[float],
     return gains
 
 
-def dsl_v5(thresholds: List[float],
-           freqs: Tuple[int, ...] = AUDIOGRAM_FREQS) -> List[float]:
+def dsl_v5(
+    thresholds: List[float], freqs: Tuple[int, ...] = AUDIOGRAM_FREQS
+) -> List[float]:
     """DSL v5 (child) formula — linear HL scaling with corrections.
 
     gain[i] = 0.6 * HL[i] + correction[f_i]
@@ -166,9 +188,9 @@ def dsl_v5(thresholds: List[float],
 # ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
-def compute(formula: str,
-            thresholds: List[float],
-            freqs: Tuple[int, ...] = AUDIOGRAM_FREQS) -> List[float]:
+def compute(
+    formula: str, thresholds: List[float], freqs: Tuple[int, ...] = AUDIOGRAM_FREQS
+) -> List[float]:
     """Dispatch to the requested prescriptive formula.
 
     Parameters
@@ -206,14 +228,14 @@ def compute(formula: str,
 # ---------------------------------------------------------------------------
 # CLI smoke test
 # ---------------------------------------------------------------------------
-def _cli() -> None:                 # pragma: no cover
+def _cli() -> None:  # pragma: no cover
     import argparse
+
     p = argparse.ArgumentParser(description="Prescriptive formula smoke test")
-    p.add_argument("--audiogram",
-                   default="0,0,10,25,35,40,45",
-                   help="7 dB HL thresholds")
-    p.add_argument("--formula", default="nal_r",
-                   choices=("nal_r", "nal_nl2", "dsl_v5"))
+    p.add_argument(
+        "--audiogram", default="0,0,10,25,35,40,45", help="7 dB HL thresholds"
+    )
+    p.add_argument("--formula", default="nal_r", choices=("nal_r", "nal_nl2", "dsl_v5"))
     args = p.parse_args()
 
     th = [float(x) for x in args.audiogram.split(",")]

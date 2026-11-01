@@ -11,6 +11,7 @@
 `timescale 1ns / 1ps
 
 module tb_top_selftest;
+    logic test_done = 1'b0;
 
     logic clk_12mhz;
     logic [3:0] btn_i;
@@ -52,13 +53,13 @@ module tb_top_selftest;
 
     initial begin
         clk_12mhz = 1'b0;
-        btn_i     = 4'b1111; // all buttons unpressed
+        btn_i     = 4'b0000; // active-high buttons released
 
         // With reduced SELF_TEST_PASS_BITS, 10 ms is enough for PASS.
         #10ms;
 
-        // self-test PASS is RGB cyan in active-low drive: R=1,G=0,B=0.
-        if ({led_rgb_r, led_rgb_g, led_rgb_b} != 3'b100) begin
+        // self-test PASS is RGB cyan in active-high drive: R=0,G=1,B=1.
+        if ({led_rgb_r, led_rgb_g, led_rgb_b} !== 3'b011) begin
             $error("SELFTEST FAIL: expected RGB cyan PASS state, got %b", {led_rgb_r, led_rgb_g, led_rgb_b});
             $fatal;
         end
@@ -70,9 +71,11 @@ module tb_top_selftest;
         end
 
         $display("tb_top_selftest PASS");
+        test_done = 1'b1;
         $finish;
     end
 
+initial begin #12ms; $fatal(1, "Self-test timeout"); end
 endmodule
 
 `default_nettype wire

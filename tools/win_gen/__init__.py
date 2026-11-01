@@ -26,7 +26,12 @@ from .validate_window import (
 )
 
 __all__ = [
-    "generate_hann", "normalize_window", "compute_window_metrics",
-    "check_cola", "check_symmetry", "check_dc_response",
-    "check_energy", "validate_all",
+    "generate_hann",
+    "normalize_window",
+    "compute_window_metrics",
+    "check_cola",
+    "check_symmetry",
+    "check_dc_response",
+    "check_energy",
+    "validate_all",
 ]

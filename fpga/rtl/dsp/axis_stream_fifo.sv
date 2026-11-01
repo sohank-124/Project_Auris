@@ -60,8 +60,8 @@ module axis_stream_fifo #(
     end
 
     initial begin
-        if (DEPTH < 2 || (1 << PTR_W) != DEPTH)
-            $display("ERROR: axis_stream_fifo DEPTH must be a power of two >= 2");
+        if (WIDTH < 1 || DEPTH < 2 || (1 << PTR_W) != DEPTH)
+            $fatal(1, "axis_stream_fifo requires WIDTH >= 1 and power-of-two DEPTH >= 2");
     end
 endmodule
 

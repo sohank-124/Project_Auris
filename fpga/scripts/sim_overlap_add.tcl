@@ -63,18 +63,9 @@ update_compile_order -fileset sim_1
 # 4. Launch and run
 # ---------------------------------------------------------------------------
 puts "Launching xsim ..."
-launch_simulation
+source [file join $script_dir simulation_common.tcl]
+auris_run_simulation /tb_overlap_add/test_done {1 ms}
 
-# 1 ms at 96 MHz = 96000 cycles; overlap-add emits a new sample every
-# few cycles once primed, so 1 ms covers a healthy stretch of the
-# history buffer and saturation corner cases.
-puts "Running 1 ms ..."
-run 1 ms
-
-# ---------------------------------------------------------------------------
-# 5. Tear down
-# ---------------------------------------------------------------------------
-close_sim -force
 close_project
 
 puts "============================================================"

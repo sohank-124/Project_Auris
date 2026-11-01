@@ -17,7 +17,7 @@ import argparse
 import math
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List
 
 _HERE = Path(__file__).resolve().parent
 _TOOLS = _HERE.parent
@@ -32,23 +32,26 @@ from common.formats import write_hex
 # ---------------------------------------------------------------------------
 # Signal generators
 # ---------------------------------------------------------------------------
-def gen_sinusoid(freq_hz: float,
-                 n_samples: int,
-                 fs: float = FS,
-                 amplitude: float = 1.0,
-                 phase: float = 0.0) -> List[float]:
+def gen_sinusoid(
+    freq_hz: float,
+    n_samples: int,
+    fs: float = FS,
+    amplitude: float = 1.0,
+    phase: float = 0.0,
+) -> List[float]:
     """Generate a pure sinusoid."""
     if n_samples < 0:
         raise ValueError(f"gen_sinusoid: n_samples must be >= 0 (got {n_samples})")
     two_pi = 2.0 * math.pi
-    return [amplitude * math.sin(two_pi * freq_hz * n / fs + phase)
-            for n in range(n_samples)]
+    return [
+        amplitude * math.sin(two_pi * freq_hz * n / fs + phase)
+        for n in range(n_samples)
+    ]
 
 
-def gen_bin_centered_sinusoid(bin_idx: int,
-                              n_samples: int,
-                              fs: float = FS,
-                              n_fft: int = N_FFT) -> List[float]:
+def gen_bin_centered_sinusoid(
+    bin_idx: int, n_samples: int, fs: float = FS, n_fft: int = N_FFT
+) -> List[float]:
     """Generate a sinusoid at the center frequency of FFT bin ``bin_idx``.
 
     A unit-amplitude cosine is returned so the FFT bin is real-only.
@@ -62,9 +65,7 @@ def gen_bin_centered_sinusoid(bin_idx: int,
     return gen_sinusoid(f, n_samples, fs=fs, amplitude=1.0, phase=0.0)
 
 
-def gen_impulse(n_samples: int,
-                delay: int = 0,
-                amplitude: float = 1.0) -> List[float]:
+def gen_impulse(n_samples: int, delay: int = 0, amplitude: float = 1.0) -> List[float]:
     """Generate an impulse at sample ``delay`` (0-padded elsewhere)."""
     if n_samples < 0:
         raise ValueError(f"gen_impulse: n_samples must be >= 0 (got {n_samples})")
@@ -77,9 +78,7 @@ def gen_impulse(n_samples: int,
     return out
 
 
-def gen_step(n_samples: int,
-             delay: int = 0,
-             amplitude: float = 1.0) -> List[float]:
+def gen_step(n_samples: int, delay: int = 0, amplitude: float = 1.0) -> List[float]:
     """Generate a step function that turns on at sample ``delay``."""
     if n_samples < 0:
         raise ValueError(f"gen_step: n_samples must be >= 0 (got {n_samples})")
@@ -90,9 +89,9 @@ def gen_step(n_samples: int,
     return [0.0] * delay + [amplitude] * (n_samples - delay)
 
 
-def gen_white_noise(n_samples: int,
-                    seed: int = 42,
-                    amplitude: float = 1.0) -> List[float]:
+def gen_white_noise(
+    n_samples: int, seed: int = 42, amplitude: float = 1.0
+) -> List[float]:
     """Generate unit-variance white noise using NumPy's default RNG.
 
     Output values are drawn from ``N(0, 1)`` and scaled by
@@ -102,7 +101,7 @@ def gen_white_noise(n_samples: int,
     """
     try:
         import numpy as np
-    except ImportError as exc:                                # pragma: no cover
+    except ImportError as exc:  # pragma: no cover
         raise ImportError(
             "gen_white_noise requires numpy. Install with: pip install numpy"
         ) from exc
@@ -112,10 +111,9 @@ def gen_white_noise(n_samples: int,
     return [amplitude * float(x) for x in rng.standard_normal(n_samples)]
 
 
-def gen_chirp(f_start: float,
-              f_stop: float,
-              n_samples: int,
-              fs: float = FS) -> List[float]:
+def gen_chirp(
+    f_start: float, f_stop: float, n_samples: int, fs: float = FS
+) -> List[float]:
     """Generate a linear-frequency chirp from ``f_start`` to ``f_stop``.
 
     The instantaneous phase at sample ``n`` is
@@ -141,17 +139,14 @@ def gen_chirp(f_start: float,
     out: List[float] = []
     for n in range(n_samples):
         t = n / fs
-        phase = two_pi * (f_start * t
-                          + 0.5 * (f_stop - f_start) * t * n / N)
+        phase = two_pi * (f_start * t + 0.5 * (f_stop - f_start) * t * n / N)
         out.append(math.sin(phase))
     return out
 
 
-def gen_band_limited_noise(f_low: float,
-                           f_high: float,
-                           n_samples: int,
-                           fs: float = FS,
-                           seed: int = 42) -> List[float]:
+def gen_band_limited_noise(
+    f_low: float, f_high: float, n_samples: int, fs: float = FS, seed: int = 42
+) -> List[float]:
     """Generate white noise band-limited to ``[f_low, f_high]`` via FFT.
 
     The algorithm is:
@@ -168,8 +163,7 @@ def gen_band_limited_noise(f_low: float,
         )
     if f_low < 0 or f_high <= f_low:
         raise ValueError(
-            f"gen_band_limited_noise: need 0 <= f_low < f_high "
-            f"(got {f_low}, {f_high})"
+            f"gen_band_limited_noise: need 0 <= f_low < f_high (got {f_low}, {f_high})"
         )
     if f_high >= fs / 2.0:
         raise ValueError(
@@ -183,10 +177,9 @@ def gen_band_limited_noise(f_low: float,
 
     try:
         import numpy as np
-    except ImportError as exc:                                # pragma: no cover
+    except ImportError as exc:  # pragma: no cover
         raise ImportError(
-            "gen_band_limited_noise requires numpy. "
-            "Install with: pip install numpy"
+            "gen_band_limited_noise requires numpy. Install with: pip install numpy"
         ) from exc
 
     rng = np.random.default_rng(seed)
@@ -214,21 +207,18 @@ def gen_silence(n_samples: int) -> List[float]:
     return [0.0] * n_samples
 
 
-def gen_square_wave(freq_hz: float,
-                    n_samples: int,
-                    fs: float = FS,
-                    amplitude: float = 1.0) -> List[float]:
+def gen_square_wave(
+    freq_hz: float, n_samples: int, fs: float = FS, amplitude: float = 1.0
+) -> List[float]:
     """Generate a 50% duty-cycle square wave of the given frequency."""
     if n_samples < 0:
-        raise ValueError(
-            f"gen_square_wave: n_samples must be >= 0 (got {n_samples})"
-        )
+        raise ValueError(f"gen_square_wave: n_samples must be >= 0 (got {n_samples})")
     if freq_hz <= 0:
         raise ValueError(f"gen_square_wave: freq_hz must be > 0 (got {freq_hz})")
     period = fs / freq_hz
     out: List[float] = []
     for n in range(n_samples):
-        phase = (n % period) / period        # 0..1
+        phase = (n % period) / period  # 0..1
         out.append(amplitude if phase < 0.5 else -amplitude)
     return out
 
@@ -270,18 +260,40 @@ def _parse_params(params: List[str]) -> dict:
 
 def main(argv: List[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Generate reproducible test signals.")
-    p.add_argument("--type",
-                   choices=("sinusoid", "bin_sin", "impulse", "step",
-                            "noise", "chirp", "band_noise", "silence",
-                            "square"),
-                   required=True)
-    p.add_argument("--n-samples", type=int, default=2048,
-                   help="Number of samples (default: %(default)s)")
+    p.add_argument(
+        "--type",
+        choices=(
+            "sinusoid",
+            "bin_sin",
+            "impulse",
+            "step",
+            "noise",
+            "chirp",
+            "band_noise",
+            "silence",
+            "square",
+        ),
+        required=True,
+    )
+    p.add_argument(
+        "--n-samples",
+        type=int,
+        default=2048,
+        help="Number of samples (default: %(default)s)",
+    )
     p.add_argument("--fs", type=float, default=FS)
-    p.add_argument("--params", nargs="*", default=[],
-                   help="Signal parameters, e.g. freq_hz=1000 amplitude=0.5")
-    p.add_argument("--out", type=Path, default=Path("test_signal"),
-                   help="Output prefix (.txt + .hex are written).")
+    p.add_argument(
+        "--params",
+        nargs="*",
+        default=[],
+        help="Signal parameters, e.g. freq_hz=1000 amplitude=0.5",
+    )
+    p.add_argument(
+        "--out",
+        type=Path,
+        default=Path("test_signal"),
+        help="Output prefix (.txt + .hex are written).",
+    )
     args = p.parse_args(argv)
     params = _parse_params(args.params)
 
@@ -301,48 +313,71 @@ def main(argv: List[str] | None = None) -> int:
 
     # Dispatch.
     if args.type == "sinusoid":
-        sig = gen_sinusoid(_f("freq_hz", 1000.0), args.n_samples,
-                           fs=args.fs,
-                           amplitude=_f("amplitude", 1.0),
-                           phase=_f("phase", 0.0))
-        label = (f"sinusoid freq={params.get('freq_hz', 1000.0)}Hz "
-                 f"amp={params.get('amplitude', 1.0)} N={args.n_samples}")
+        sig = gen_sinusoid(
+            _f("freq_hz", 1000.0),
+            args.n_samples,
+            fs=args.fs,
+            amplitude=_f("amplitude", 1.0),
+            phase=_f("phase", 0.0),
+        )
+        label = (
+            f"sinusoid freq={params.get('freq_hz', 1000.0)}Hz "
+            f"amp={params.get('amplitude', 1.0)} N={args.n_samples}"
+        )
     elif args.type == "bin_sin":
-        sig = gen_bin_centered_sinusoid(_i("bin_idx", 8), args.n_samples,
-                                        fs=args.fs, n_fft=N_FFT)
-        label = f"bin-centered sinusoid bin={params.get('bin_idx', 8)} N={args.n_samples}"
+        sig = gen_bin_centered_sinusoid(
+            _i("bin_idx", 8), args.n_samples, fs=args.fs, n_fft=N_FFT
+        )
+        label = (
+            f"bin-centered sinusoid bin={params.get('bin_idx', 8)} N={args.n_samples}"
+        )
     elif args.type == "impulse":
-        sig = gen_impulse(args.n_samples, delay=_i("delay", 0),
-                          amplitude=_f("amplitude", 1.0))
+        sig = gen_impulse(
+            args.n_samples, delay=_i("delay", 0), amplitude=_f("amplitude", 1.0)
+        )
         label = f"impulse delay={params.get('delay', 0)} N={args.n_samples}"
     elif args.type == "step":
-        sig = gen_step(args.n_samples, delay=_i("delay", 0),
-                       amplitude=_f("amplitude", 1.0))
+        sig = gen_step(
+            args.n_samples, delay=_i("delay", 0), amplitude=_f("amplitude", 1.0)
+        )
         label = f"step delay={params.get('delay', 0)} N={args.n_samples}"
     elif args.type == "noise":
-        sig = gen_white_noise(args.n_samples, seed=_i("seed", 42),
-                              amplitude=_f("amplitude", 1.0))
+        sig = gen_white_noise(
+            args.n_samples, seed=_i("seed", 42), amplitude=_f("amplitude", 1.0)
+        )
         label = f"white noise seed={params.get('seed', 42)} N={args.n_samples}"
     elif args.type == "chirp":
-        sig = gen_chirp(_f("f_start", 100.0), _f("f_stop", 10000.0),
-                        args.n_samples, fs=args.fs)
-        label = (f"chirp {params.get('f_start', 100.0)}->"
-                 f"{params.get('f_stop', 10000.0)} Hz N={args.n_samples}")
+        sig = gen_chirp(
+            _f("f_start", 100.0), _f("f_stop", 10000.0), args.n_samples, fs=args.fs
+        )
+        label = (
+            f"chirp {params.get('f_start', 100.0)}->"
+            f"{params.get('f_stop', 10000.0)} Hz N={args.n_samples}"
+        )
     elif args.type == "band_noise":
-        sig = gen_band_limited_noise(_f("f_low", 300.0),
-                                     _f("f_high", 3400.0),
-                                     args.n_samples, fs=args.fs,
-                                     seed=_i("seed", 42))
-        label = (f"band-limited noise {params.get('f_low', 300.0)}-"
-                 f"{params.get('f_high', 3400.0)} Hz N={args.n_samples}")
+        sig = gen_band_limited_noise(
+            _f("f_low", 300.0),
+            _f("f_high", 3400.0),
+            args.n_samples,
+            fs=args.fs,
+            seed=_i("seed", 42),
+        )
+        label = (
+            f"band-limited noise {params.get('f_low', 300.0)}-"
+            f"{params.get('f_high', 3400.0)} Hz N={args.n_samples}"
+        )
     elif args.type == "silence":
         sig = gen_silence(args.n_samples)
         label = f"silence N={args.n_samples}"
     elif args.type == "square":
-        sig = gen_square_wave(_f("freq_hz", 1000.0), args.n_samples,
-                              fs=args.fs, amplitude=_f("amplitude", 1.0))
+        sig = gen_square_wave(
+            _f("freq_hz", 1000.0),
+            args.n_samples,
+            fs=args.fs,
+            amplitude=_f("amplitude", 1.0),
+        )
         label = f"square wave freq={params.get('freq_hz', 1000.0)}Hz N={args.n_samples}"
-    else:                                                  # pragma: no cover
+    else:  # pragma: no cover
         raise SystemExit(f"unknown type: {args.type}")
 
     txt_path = Path(str(args.out) + ".txt")

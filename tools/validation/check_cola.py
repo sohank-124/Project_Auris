@@ -37,9 +37,9 @@ from common.constants import FRAME_ADVANCE
 # ---------------------------------------------------------------------------
 # Float version
 # ---------------------------------------------------------------------------
-def check_cola_condition(window: List[float],
-                         hop_size: int = FRAME_ADVANCE,
-                         tol: float = 1e-6) -> Tuple[bool, float, List[float]]:
+def check_cola_condition(
+    window: List[float], hop_size: int = FRAME_ADVANCE, tol: float = 1e-6
+) -> Tuple[bool, float, List[float]]:
     """Check the COLA condition for a window / hop-size pair.
 
     The function simulates a long overlap-add: a length-``N`` window
@@ -57,7 +57,9 @@ def check_cola_condition(window: List[float],
     if not window:
         return (True, 0.0, [])
     if hop_size < 1:
-        raise ValueError(f"check_cola_condition: hop_size must be >= 1 (got {hop_size})")
+        raise ValueError(
+            f"check_cola_condition: hop_size must be >= 1 (got {hop_size})"
+        )
 
     n = len(window)
     n_frames = (n // hop_size) * 4 + 8
@@ -80,9 +82,9 @@ def check_cola_condition(window: List[float],
 # ---------------------------------------------------------------------------
 # Fixed-point version
 # ---------------------------------------------------------------------------
-def check_cola_fixed_point(window_q14: List[int],
-                           hop_size: int = FRAME_ADVANCE,
-                           tol_lsbs: int = 2) -> Tuple[bool, int, List[int]]:
+def check_cola_fixed_point(
+    window_q14: List[int], hop_size: int = FRAME_ADVANCE, tol_lsbs: int = 2
+) -> Tuple[bool, int, List[int]]:
     """Fixed-point COLA check.
 
     The window coefficients are taken as Q2.14 signed integers.  The
@@ -156,12 +158,24 @@ def main(argv: List[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         description="Check the COLA condition for a window / hop pair.",
     )
-    p.add_argument("--window-file", type=Path, required=True,
-                   help="Window file (.txt = float, .hex = Q2.14).")
-    p.add_argument("--hop", type=int, default=FRAME_ADVANCE,
-                   help="Hop size in samples (default: %(default)s)")
-    p.add_argument("--tol", type=float, default=1e-6,
-                   help="Tolerance (relative for float, LSBs for hex).")
+    p.add_argument(
+        "--window-file",
+        type=Path,
+        required=True,
+        help="Window file (.txt = float, .hex = Q2.14).",
+    )
+    p.add_argument(
+        "--hop",
+        type=int,
+        default=FRAME_ADVANCE,
+        help="Hop size in samples (default: %(default)s)",
+    )
+    p.add_argument(
+        "--tol",
+        type=float,
+        default=1e-6,
+        help="Tolerance (relative for float, LSBs for hex).",
+    )
     args = p.parse_args(argv)
 
     if args.window_file.suffix.lower() == ".hex":
@@ -172,14 +186,14 @@ def main(argv: List[str] | None = None) -> int:
         kind = "fixed-point (Q2.14 LSBs)"
     else:
         w = _read_float_window(args.window_file)
-        ok, dev, _ = check_cola_condition(
-            w, hop_size=args.hop, tol=args.tol
-        )
+        ok, dev, _ = check_cola_condition(w, hop_size=args.hop, tol=args.tol)
         kind = "float (absolute)"
 
     print(f"COLA check ({kind}):")
-    print(f"  N = {len(w)}, hop = {args.hop}, "
-          f"# overlapping frames = {len(w) // args.hop + 1}")
+    print(
+        f"  N = {len(w)}, hop = {args.hop}, "
+        f"# overlapping frames = {len(w) // args.hop + 1}"
+    )
     print(f"  max deviation = {dev}")
     print(f"  status        = {'PASS' if ok else 'FAIL'}")
     return 0

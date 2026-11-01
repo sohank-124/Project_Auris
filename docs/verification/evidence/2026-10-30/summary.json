@@ -1,0 +1,27 @@
+{
+  "code_reset_and_manual_cdc_acceptance": "accepted for documented default configuration/common reset contract",
+  "F25": "open: external budgets and physical receiver/PLL validation",
+  "tool": "Vivado 2026.1",
+  "part": "xc7s25csga324-1",
+  "setup_wns_ns": 0.696,
+  "hold_whs_ns": 0.019,
+  "setup_failing_endpoints": 0,
+  "hold_failing_endpoints": 0,
+  "unconstrained_internal_endpoints": 0,
+  "timed_local_reset_controls": 1434,
+  "intentional_raw_reset_chain_controls": 36,
+  "gray_pointer_paths": 24,
+  "minimum_gray_bus_skew_margin_ns": 8.998,
+  "ram_consumer_endpoints": 129,
+  "lut": 6165,
+  "ff": 9851,
+  "bram36_equivalent": 6.5,
+  "dsp": 28,
+  "full_hdl_suite_run": false,
+  "hardware_programmed": false,
+  "existing_sources_changed": [
+    "fpga/rtl/clk_gen.sv",
+    "fpga/rtl/top.sv"
+  ],
+  "scope_limits": "bounded simulations; no analog metastability/MTBF measurement; no autonomous MMCM relock feature; no arbitrary one-sided FIFO reset"
+}

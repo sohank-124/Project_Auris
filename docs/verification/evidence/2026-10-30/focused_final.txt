@@ -1,0 +1,370 @@
+INFO: [Common 17-3922] A valid Vivado Design Suite BASIC license has been detected. Your current license is active and will expire on 09-jul-2027.
+#-----------------------------------------------------------
+# Vivado v2026.1 (64-bit)
+# SW Build 6511674 on Tue Jun 16 11:02:23 MDT 2026
+# IP Build 6504888 on Tue Jun 09 09:05:25 MDT 2026
+# SharedData Build 6501428 on Mon Jun 08 17:34:18 MDT 2026
+# Start of session at: Fri Oct 30 18:32:10 2026
+# Process ID         : 40048
+# Current directory  : C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair
+# Command line       : vivado.exe -mode batch -source focused.tcl -log focused_final.log -journal focused_final.jou
+# Log file           : C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/focused_final.log
+# Journal file       : C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair\focused_final.jou
+# Running On         : Sohan_PC
+# Platform           : Windows 11
+# Operating System   : 26200
+# Processor Detail   : Intel(R) Core(TM) Ultra 9 288V
+# CPU Frequency      : 3302 MHz
+# CPU Physical cores : 8
+# CPU Logical cores  : 8
+# Host memory        : 33895 MB
+# Swap memory        : 3311 MB
+# Total Virtual      : 37207 MB
+# Available Virtual  : 6973 MB
+#-----------------------------------------------------------
+source focused.tcl
+# set here [file dirname [file normalize [info script]]]
+# set root [file normalize [file join $here ../../..]]
+# cd $here
+# source [file join $root fpga/scripts/simulation_common.tcl]
+## proc auris_run_simulation {completion_path duration} {
+##     set project [current_project]
+##     set log_path [file join [get_property DIRECTORY $project] \
+##         "[get_property NAME $project].sim" sim_1 behav xsim simulate.log]
+##     set_property xsim.elaborate.debug_level typical [get_filesets sim_1]
+##     # Numerical regressions do not need a waveform database of every IP signal.
+##     set_property xsim.simulate.log_all_signals false [get_filesets sim_1]
+##     launch_simulation
+##     run {*}$duration
+##     set done [get_value -radix unsigned $completion_path]
+##     close_sim -force
+##     if {![file exists $log_path]} { error "Missing simulator transcript: $log_path" }
+##     set channel [open $log_path r]
+##     set transcript [read $channel]
+##     close $channel
+##     if {[regexp -nocase {(^|\n)[ \t]*(fatal|error):} $transcript]} {
+##         error "Simulator reported an error: $log_path"
+##     }
+##     if {$done ne "1"} { error "Simulation did not reach successful completion" }
+## }
+# foreach name {reset_release cdc_stress clk_gen cdc_fifo} {
+#  create_project -force $name [file join $here final_sim_$name] -part xc7s25csga324-1
+#  add_files [file join $root fpga/rtl]
+#  add_files -fileset sim_1 [file join $root fpga/sim/testbenches tb_${name}.sv]
+#  set_property top tb_$name [get_filesets sim_1]
+#  set_property xsim.simulate.runtime 0ns [get_filesets sim_1]
+#  update_compile_order -fileset sim_1
+#  if {[catch {auris_run_simulation /tb_$name/test_done {2 ms}} msg]} {puts stderr "FOCUSED_FAIL $name $msg"; exit 1}
+#  close_project
+#  puts "FOCUSED_PASS $name"
+# }
+INFO: [ProjectBase 1-489] The host OS only allows 260 characters in a normal path. The project is stored in a path with more than 80 characters. If you experience issues with IP, Block Designs, or files not being found, please consider moving the project to a location with a shorter path. Alternately consider using the OS subst command to map part of the path to a drive letter.
+Current project path is 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_reset_release'
+create_project: Time (s): cpu = 00:00:08 ; elapsed = 00:00:08 . Memory (MB): peak = 585.719 ; gain = 267.820
+Command: launch_simulation  -mode behavioral
+INFO: [Vivado 12-25911] Executing simulation for 'XSim' simulator
+INFO: [Vivado 12-28535] Process started - Fri Oct 30 18:32:24 2026
+
+INFO: [Vivado 12-12493] Simulation top is 'tb_reset_release'
+INFO: [Vivado 12-5682] Launching behavioral simulation in 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_reset_release/reset_release.sim/sim_1/behav/xsim'
+INFO: [SIM-utils-51] Simulation object is 'sim_1'
+INFO: [SIM-utils-72] Using boost library from 'C:/AMDDesignTools/2026.1/Vivado/tps/boost_1_72_0'
+INFO: [SIM-utils-54] Inspecting design source files for 'tb_reset_release' in fileset 'sim_1'...
+INFO: [USF-XSim-97] Finding global include files...
+INFO: [USF-XSim-98] Fetching design files from 'sim_1'...
+INFO: [USF-XSim-2] XSim::Compile design
+INFO: [USF-XSim-61] Executing 'COMPILE and ANALYZE' step in 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_reset_release/reset_release.sim/sim_1/behav/xsim'
+"xvlog --incr --relax -L uvm -prj tb_reset_release_vlog.prj"
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/rtl/pkg/auris_pkg.sv" into library xil_defaultlib
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/rtl/clk_gen.sv" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module clk_gen
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/rtl/cdc/reset_release.sv" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module reset_release
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/rtl/top.sv" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module top
+INFO: [VRFC 10-311] analyzing module reset_sync_stretch
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/sim/testbenches/tb_reset_release.sv" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module tb_reset_release
+INFO: [VRFC 10-2263] Analyzing Verilog file "C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_reset_release/reset_release.sim/sim_1/behav/xsim/glbl.v" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module glbl
+INFO: [USF-XSim-69] 'compile' step finished in '1' seconds
+INFO: [USF-XSim-3] XSim::Elaborate design
+INFO: [USF-XSim-61] Executing 'ELABORATE' step in 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_reset_release/reset_release.sim/sim_1/behav/xsim'
+"xelab --incr --debug typical --relax --mt 2 -L xil_defaultlib -L uvm -L unisims_ver -L unimacro_ver -L secureip --snapshot tb_reset_release_behav xil_defaultlib.tb_reset_release xil_defaultlib.glbl -log elaborate.log"
+Vivado Simulator v2026.1
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved.
+Copyright 2022-2026 Advanced Micro Devices, Inc. All Rights Reserved.
+Running: C:/AMDDesignTools/2026.1/Vivado/bin/unwrapped/win64.o/xelab.exe --incr --debug typical --relax --mt 2 -L xil_defaultlib -L uvm -L unisims_ver -L unimacro_ver -L secureip --snapshot tb_reset_release_behav xil_defaultlib.tb_reset_release xil_defaultlib.glbl -log elaborate.log 
+INFO: [XSIM 43-3493] Using 2 slave threads.
+Starting static elaboration
+Pass Through NonSizing Optimizer
+Completed static elaboration
+Starting simulation data flow analysis
+Completed simulation data flow analysis
+Time Resolution for simulation is 1ps
+Compiling module xil_defaultlib.reset_release_default
+Compiling module xil_defaultlib.reset_release(STAGES=32'b010000)
+Compiling module xil_defaultlib.reset_sync_stretch_default
+Compiling module xil_defaultlib.reset_release(FALLING_EDGE=1'b1)
+Compiling module unisims_ver.BUFG
+Compiling module unisims_ver.MMCME2_ADV(CLKFBOUT_MULT_F=50.0,...
+Compiling module unisims_ver.MMCME2_BASE(CLKFBOUT_MULT_F=50.0...
+Compiling module xil_defaultlib.clk_gen
+Compiling module xil_defaultlib.tb_reset_release
+Compiling module xil_defaultlib.glbl
+Built simulation snapshot tb_reset_release_behav
+INFO: [USF-XSim-69] 'elaborate' step finished in '2' seconds
+INFO: [USF-XSim-4] XSim::Simulate design
+INFO: [USF-XSim-61] Executing 'SIMULATE' step in 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_reset_release/reset_release.sim/sim_1/behav/xsim'
+INFO: [USF-XSim-98] *** Running xsim
+   with args "tb_reset_release_behav -key {Behavioral:sim_1:Functional:tb_reset_release} -tclbatch {tb_reset_release.tcl} -log {simulate.log}"
+INFO: [USF-XSim-8] Loading simulator feature
+Time resolution is 1 ps
+source tb_reset_release.tcl
+## set curr_wave [current_wave_config]
+## if { [string length $curr_wave] == 0 } {
+##   if { [llength [get_objects]] > 0} {
+##     add_wave /
+##     set_property needs_save false [current_wave_config]
+##   } else {
+##      send_msg_id Add_Wave-1 WARNING "No top level signals found. Simulator will start without a wave window. If you want to open a wave window go to 'File->New Waveform Configuration' or type 'create_wave_config' in the TCL console."
+##   }
+## }
+## run 0ns
+INFO: [USF-XSim-96] XSim completed. Design snapshot 'tb_reset_release_behav' loaded.
+INFO: [USF-XSim-97] XSim simulation ran for 0ns
+launch_simulation: Time (s): cpu = 00:00:01 ; elapsed = 00:00:07 . Memory (MB): peak = 609.086 ; gain = 23.367
+RESET_RELEASE_PASS phases=20 lock_restarts=8 bclk_edges=1200 stopped_clock=1
+$finish called at time : 403789688 ps : File "C:/Users/sohan/CODE/Project_Auris/fpga/sim/testbenches/tb_reset_release.sv" Line 77
+INFO: [Simtcl 6-16] Simulation closed
+FOCUSED_PASS reset_release
+INFO: [ProjectBase 1-489] The host OS only allows 260 characters in a normal path. The project is stored in a path with more than 80 characters. If you experience issues with IP, Block Designs, or files not being found, please consider moving the project to a location with a shorter path. Alternately consider using the OS subst command to map part of the path to a drive letter.
+Current project path is 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_cdc_stress'
+Command: launch_simulation  -mode behavioral
+INFO: [Vivado 12-25911] Executing simulation for 'XSim' simulator
+INFO: [Vivado 12-28535] Process started - Fri Oct 30 18:32:35 2026
+
+INFO: [Vivado 12-12493] Simulation top is 'tb_cdc_stress'
+INFO: [Vivado 12-5682] Launching behavioral simulation in 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_cdc_stress/cdc_stress.sim/sim_1/behav/xsim'
+INFO: [SIM-utils-51] Simulation object is 'sim_1'
+INFO: [SIM-utils-72] Using boost library from 'C:/AMDDesignTools/2026.1/Vivado/tps/boost_1_72_0'
+INFO: [SIM-utils-54] Inspecting design source files for 'tb_cdc_stress' in fileset 'sim_1'...
+INFO: [USF-XSim-97] Finding global include files...
+INFO: [USF-XSim-98] Fetching design files from 'sim_1'...
+INFO: [USF-XSim-2] XSim::Compile design
+INFO: [USF-XSim-61] Executing 'COMPILE and ANALYZE' step in 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_cdc_stress/cdc_stress.sim/sim_1/behav/xsim'
+"xvlog --incr --relax -L uvm -prj tb_cdc_stress_vlog.prj"
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/rtl/pkg/auris_pkg.sv" into library xil_defaultlib
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/rtl/cdc/cdc_dsp_to_i2s.sv" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module cdc_dsp_to_i2s
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/rtl/cdc/cdc_i2s_to_dsp.sv" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module cdc_i2s_to_dsp
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/rtl/cdc/reset_release.sv" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module reset_release
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/sim/testbenches/tb_cdc_stress.sv" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module fifo_stress_case
+INFO: [VRFC 10-311] analyzing module tb_cdc_stress
+INFO: [VRFC 10-2263] Analyzing Verilog file "C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_cdc_stress/cdc_stress.sim/sim_1/behav/xsim/glbl.v" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module glbl
+INFO: [USF-XSim-69] 'compile' step finished in '1' seconds
+INFO: [USF-XSim-3] XSim::Elaborate design
+INFO: [USF-XSim-61] Executing 'ELABORATE' step in 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_cdc_stress/cdc_stress.sim/sim_1/behav/xsim'
+"xelab --incr --debug typical --relax --mt 2 -L xil_defaultlib -L uvm -L unisims_ver -L unimacro_ver -L secureip --snapshot tb_cdc_stress_behav xil_defaultlib.tb_cdc_stress xil_defaultlib.glbl -log elaborate.log"
+Vivado Simulator v2026.1
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved.
+Copyright 2022-2026 Advanced Micro Devices, Inc. All Rights Reserved.
+Running: C:/AMDDesignTools/2026.1/Vivado/bin/unwrapped/win64.o/xelab.exe --incr --debug typical --relax --mt 2 -L xil_defaultlib -L uvm -L unisims_ver -L unimacro_ver -L secureip --snapshot tb_cdc_stress_behav xil_defaultlib.tb_cdc_stress xil_defaultlib.glbl -log elaborate.log 
+INFO: [XSIM 43-3493] Using 2 slave threads.
+Starting static elaboration
+Pass Through NonSizing Optimizer
+Completed static elaboration
+Starting simulation data flow analysis
+Completed simulation data flow analysis
+Time Resolution for simulation is 1ps
+Compiling package xil_defaultlib.auris_pkg
+Compiling module xil_defaultlib.reset_release_default
+Compiling module xil_defaultlib.cdc_i2s_to_dsp_default
+Compiling module xil_defaultlib.fifo_stress_case_default
+Compiling module xil_defaultlib.fifo_stress_case(REVERSE=1'b1)
+Compiling module xil_defaultlib.cdc_dsp_to_i2s_default
+Compiling module xil_defaultlib.fifo_stress_case(OUTPUT_FIFO=1'b...
+Compiling module xil_defaultlib.fifo_stress_case(OUTPUT_FIFO=1'b...
+Compiling module xil_defaultlib.tb_cdc_stress
+Compiling module xil_defaultlib.glbl
+Built simulation snapshot tb_cdc_stress_behav
+INFO: [USF-XSim-69] 'elaborate' step finished in '2' seconds
+INFO: [USF-XSim-4] XSim::Simulate design
+INFO: [USF-XSim-61] Executing 'SIMULATE' step in 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_cdc_stress/cdc_stress.sim/sim_1/behav/xsim'
+INFO: [USF-XSim-98] *** Running xsim
+   with args "tb_cdc_stress_behav -key {Behavioral:sim_1:Functional:tb_cdc_stress} -tclbatch {tb_cdc_stress.tcl} -log {simulate.log}"
+INFO: [USF-XSim-8] Loading simulator feature
+Time resolution is 1 ps
+source tb_cdc_stress.tcl
+## set curr_wave [current_wave_config]
+## if { [string length $curr_wave] == 0 } {
+##   if { [llength [get_objects]] > 0} {
+##     add_wave /
+##     set_property needs_save false [current_wave_config]
+##   } else {
+##      send_msg_id Add_Wave-1 WARNING "No top level signals found. Simulator will start without a wave window. If you want to open a wave window go to 'File->New Waveform Configuration' or type 'create_wave_config' in the TCL console."
+##   }
+## }
+## run 0ns
+INFO: [USF-XSim-96] XSim completed. Design snapshot 'tb_cdc_stress_behav' loaded.
+INFO: [USF-XSim-97] XSim simulation ran for 0ns
+launch_simulation: Time (s): cpu = 00:00:01 ; elapsed = 00:00:05 . Memory (MB): peak = 609.086 ; gain = 0.000
+CDC_STRESS_CASE 0 writes=858 reads=834 rejected_full=27227 empty_reads=56
+CDC_STRESS_CASE 1 writes=893 reads=893 rejected_full=0 empty_reads=27179
+CDC_STRESS_CASE 2 writes=858 reads=834 rejected_full=27227 empty_reads=56
+CDC_STRESS_CASE 3 writes=893 reads=893 rejected_full=0 empty_reads=27179
+CDC_STRESS_PASS cases=4 epochs=12 resets_occupied=6 drains=6
+$finish called at time : 318892840 ps : File "C:/Users/sohan/CODE/Project_Auris/fpga/sim/testbenches/tb_cdc_stress.sv" Line 87
+INFO: [Simtcl 6-16] Simulation closed
+FOCUSED_PASS cdc_stress
+INFO: [ProjectBase 1-489] The host OS only allows 260 characters in a normal path. The project is stored in a path with more than 80 characters. If you experience issues with IP, Block Designs, or files not being found, please consider moving the project to a location with a shorter path. Alternately consider using the OS subst command to map part of the path to a drive letter.
+Current project path is 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_clk_gen'
+Command: launch_simulation  -mode behavioral
+INFO: [Vivado 12-25911] Executing simulation for 'XSim' simulator
+INFO: [Vivado 12-28535] Process started - Fri Oct 30 18:32:44 2026
+
+INFO: [Vivado 12-12493] Simulation top is 'tb_clk_gen'
+INFO: [Vivado 12-5682] Launching behavioral simulation in 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_clk_gen/clk_gen.sim/sim_1/behav/xsim'
+INFO: [SIM-utils-51] Simulation object is 'sim_1'
+INFO: [SIM-utils-72] Using boost library from 'C:/AMDDesignTools/2026.1/Vivado/tps/boost_1_72_0'
+INFO: [SIM-utils-54] Inspecting design source files for 'tb_clk_gen' in fileset 'sim_1'...
+INFO: [USF-XSim-97] Finding global include files...
+INFO: [USF-XSim-98] Fetching design files from 'sim_1'...
+INFO: [USF-XSim-2] XSim::Compile design
+INFO: [USF-XSim-61] Executing 'COMPILE and ANALYZE' step in 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_clk_gen/clk_gen.sim/sim_1/behav/xsim'
+"xvlog --incr --relax -L uvm -prj tb_clk_gen_vlog.prj"
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/rtl/clk_gen.sv" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module clk_gen
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/rtl/cdc/reset_release.sv" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module reset_release
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/sim/testbenches/tb_clk_gen.sv" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module tb_clk_gen
+INFO: [VRFC 10-2263] Analyzing Verilog file "C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_clk_gen/clk_gen.sim/sim_1/behav/xsim/glbl.v" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module glbl
+INFO: [USF-XSim-69] 'compile' step finished in '1' seconds
+INFO: [USF-XSim-3] XSim::Elaborate design
+INFO: [USF-XSim-61] Executing 'ELABORATE' step in 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_clk_gen/clk_gen.sim/sim_1/behav/xsim'
+"xelab --incr --debug typical --relax --mt 2 -L xil_defaultlib -L uvm -L unisims_ver -L unimacro_ver -L secureip --snapshot tb_clk_gen_behav xil_defaultlib.tb_clk_gen xil_defaultlib.glbl -log elaborate.log"
+Vivado Simulator v2026.1
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved.
+Copyright 2022-2026 Advanced Micro Devices, Inc. All Rights Reserved.
+Running: C:/AMDDesignTools/2026.1/Vivado/bin/unwrapped/win64.o/xelab.exe --incr --debug typical --relax --mt 2 -L xil_defaultlib -L uvm -L unisims_ver -L unimacro_ver -L secureip --snapshot tb_clk_gen_behav xil_defaultlib.tb_clk_gen xil_defaultlib.glbl -log elaborate.log 
+INFO: [XSIM 43-3493] Using 2 slave threads.
+Starting static elaboration
+Pass Through NonSizing Optimizer
+Completed static elaboration
+Starting simulation data flow analysis
+Completed simulation data flow analysis
+Time Resolution for simulation is 1ps
+Compiling module unisims_ver.BUFG
+Compiling module xil_defaultlib.reset_release_default
+Compiling module xil_defaultlib.reset_release(FALLING_EDGE=1'b1)
+Compiling module unisims_ver.MMCME2_ADV(CLKFBOUT_MULT_F=50.0,...
+Compiling module unisims_ver.MMCME2_BASE(CLKFBOUT_MULT_F=50.0...
+Compiling module xil_defaultlib.clk_gen
+Compiling module xil_defaultlib.tb_clk_gen
+Compiling module xil_defaultlib.glbl
+Built simulation snapshot tb_clk_gen_behav
+INFO: [USF-XSim-69] 'elaborate' step finished in '2' seconds
+INFO: [USF-XSim-4] XSim::Simulate design
+INFO: [USF-XSim-61] Executing 'SIMULATE' step in 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_clk_gen/clk_gen.sim/sim_1/behav/xsim'
+INFO: [USF-XSim-98] *** Running xsim
+   with args "tb_clk_gen_behav -key {Behavioral:sim_1:Functional:tb_clk_gen} -tclbatch {tb_clk_gen.tcl} -log {simulate.log}"
+INFO: [USF-XSim-8] Loading simulator feature
+Time resolution is 1 ps
+source tb_clk_gen.tcl
+## set curr_wave [current_wave_config]
+## if { [string length $curr_wave] == 0 } {
+##   if { [llength [get_objects]] > 0} {
+##     add_wave /
+##     set_property needs_save false [current_wave_config]
+##   } else {
+##      send_msg_id Add_Wave-1 WARNING "No top level signals found. Simulator will start without a wave window. If you want to open a wave window go to 'File->New Waveform Configuration' or type 'create_wave_config' in the TCL console."
+##   }
+## }
+## run 0ns
+INFO: [USF-XSim-96] XSim completed. Design snapshot 'tb_clk_gen_behav' loaded.
+INFO: [USF-XSim-97] XSim simulation ran for 0ns
+launch_simulation: Time (s): cpu = 00:00:00 ; elapsed = 00:00:06 . Memory (MB): peak = 609.086 ; gain = 0.000
+CLOCK_RATE_PASS DSP=96000 BCLK=3072 LRCLK=48 per millisecond, 6144 half periods checked
+$finish called at time : 1113875211 ps : File "C:/Users/sohan/CODE/Project_Auris/fpga/sim/testbenches/tb_clk_gen.sv" Line 22
+INFO: [Simtcl 6-16] Simulation closed
+FOCUSED_PASS clk_gen
+INFO: [ProjectBase 1-489] The host OS only allows 260 characters in a normal path. The project is stored in a path with more than 80 characters. If you experience issues with IP, Block Designs, or files not being found, please consider moving the project to a location with a shorter path. Alternately consider using the OS subst command to map part of the path to a drive letter.
+Current project path is 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_cdc_fifo'
+Command: launch_simulation  -mode behavioral
+INFO: [Vivado 12-25911] Executing simulation for 'XSim' simulator
+INFO: [Vivado 12-28535] Process started - Fri Oct 30 18:32:55 2026
+
+INFO: [Vivado 12-12493] Simulation top is 'tb_cdc_fifo'
+INFO: [Vivado 12-5682] Launching behavioral simulation in 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_cdc_fifo/cdc_fifo.sim/sim_1/behav/xsim'
+INFO: [SIM-utils-51] Simulation object is 'sim_1'
+INFO: [SIM-utils-72] Using boost library from 'C:/AMDDesignTools/2026.1/Vivado/tps/boost_1_72_0'
+INFO: [SIM-utils-54] Inspecting design source files for 'tb_cdc_fifo' in fileset 'sim_1'...
+INFO: [USF-XSim-97] Finding global include files...
+INFO: [USF-XSim-98] Fetching design files from 'sim_1'...
+INFO: [USF-XSim-2] XSim::Compile design
+INFO: [USF-XSim-61] Executing 'COMPILE and ANALYZE' step in 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_cdc_fifo/cdc_fifo.sim/sim_1/behav/xsim'
+"xvlog --incr --relax -L uvm -prj tb_cdc_fifo_vlog.prj"
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/rtl/pkg/auris_pkg.sv" into library xil_defaultlib
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/rtl/cdc/cdc_dsp_to_i2s.sv" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module cdc_dsp_to_i2s
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/rtl/cdc/cdc_i2s_to_dsp.sv" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module cdc_i2s_to_dsp
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/sohan/CODE/Project_Auris/fpga/sim/testbenches/tb_cdc_fifo.sv" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module tb_cdc_fifo
+INFO: [VRFC 10-2263] Analyzing Verilog file "C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_cdc_fifo/cdc_fifo.sim/sim_1/behav/xsim/glbl.v" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module glbl
+INFO: [USF-XSim-69] 'compile' step finished in '1' seconds
+INFO: [USF-XSim-3] XSim::Elaborate design
+INFO: [USF-XSim-61] Executing 'ELABORATE' step in 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_cdc_fifo/cdc_fifo.sim/sim_1/behav/xsim'
+"xelab --incr --debug typical --relax --mt 2 -L xil_defaultlib -L uvm -L unisims_ver -L unimacro_ver -L secureip --snapshot tb_cdc_fifo_behav xil_defaultlib.tb_cdc_fifo xil_defaultlib.glbl -log elaborate.log"
+Vivado Simulator v2026.1
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved.
+Copyright 2022-2026 Advanced Micro Devices, Inc. All Rights Reserved.
+Running: C:/AMDDesignTools/2026.1/Vivado/bin/unwrapped/win64.o/xelab.exe --incr --debug typical --relax --mt 2 -L xil_defaultlib -L uvm -L unisims_ver -L unimacro_ver -L secureip --snapshot tb_cdc_fifo_behav xil_defaultlib.tb_cdc_fifo xil_defaultlib.glbl -log elaborate.log 
+INFO: [XSIM 43-3493] Using 2 slave threads.
+Starting static elaboration
+Pass Through NonSizing Optimizer
+Completed static elaboration
+Starting simulation data flow analysis
+Completed simulation data flow analysis
+Time Resolution for simulation is 1ps
+Compiling package xil_defaultlib.auris_pkg
+Compiling module xil_defaultlib.cdc_i2s_to_dsp_default
+Compiling module xil_defaultlib.cdc_dsp_to_i2s_default
+Compiling module xil_defaultlib.tb_cdc_fifo
+Compiling module xil_defaultlib.glbl
+Built simulation snapshot tb_cdc_fifo_behav
+INFO: [USF-XSim-69] 'elaborate' step finished in '2' seconds
+INFO: [USF-XSim-4] XSim::Simulate design
+INFO: [USF-XSim-61] Executing 'SIMULATE' step in 'C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/f25_reset_repair/final_sim_cdc_fifo/cdc_fifo.sim/sim_1/behav/xsim'
+INFO: [USF-XSim-98] *** Running xsim
+   with args "tb_cdc_fifo_behav -key {Behavioral:sim_1:Functional:tb_cdc_fifo} -tclbatch {tb_cdc_fifo.tcl} -log {simulate.log}"
+INFO: [USF-XSim-8] Loading simulator feature
+Time resolution is 1 ps
+source tb_cdc_fifo.tcl
+## set curr_wave [current_wave_config]
+## if { [string length $curr_wave] == 0 } {
+##   if { [llength [get_objects]] > 0} {
+##     add_wave /
+##     set_property needs_save false [current_wave_config]
+##   } else {
+##      send_msg_id Add_Wave-1 WARNING "No top level signals found. Simulator will start without a wave window. If you want to open a wave window go to 'File->New Waveform Configuration' or type 'create_wave_config' in the TCL console."
+##   }
+## }
+## run 0ns
+INFO: [USF-XSim-96] XSim completed. Design snapshot 'tb_cdc_fifo_behav' loaded.
+INFO: [USF-XSim-97] XSim simulation ran for 0ns
+CDC_FIFO_PASS 256 reads in each implementation, overfill, empty and reset
+$finish called at time : 22400 ns : File "C:/Users/sohan/CODE/Project_Auris/fpga/sim/testbenches/tb_cdc_fifo.sv" Line 34
+INFO: [Simtcl 6-16] Simulation closed
+FOCUSED_PASS cdc_fifo
+# puts "F25_RESET_CDC_FOCUSED_PASS"
+F25_RESET_CDC_FOCUSED_PASS
+# exit 0
+INFO: [Common 17-206] Exiting Vivado at Fri Oct 30 18:33:01 2026...

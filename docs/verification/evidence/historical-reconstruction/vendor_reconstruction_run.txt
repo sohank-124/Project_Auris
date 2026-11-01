@@ -1,0 +1,41 @@
+#-----------------------------------------------------------
+# xsim v2026.1 (64-bit)
+# SW Build 6511674 on Tue Jun 16 11:02:23 MDT 2026
+# IP Build 6504888 on Tue Jun 09 09:05:25 MDT 2026
+# SharedData Build 6501428 on Mon Jun 08 17:34:18 MDT 2026
+# Start of session at: Thu Oct 29 02:52:03 2026
+# Process ID         : 61288
+# Current directory  : C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs
+# Command line       : xsim.exe -log vendor_reconstruction_run.log -mode tcl -source {xsim.dir/vendor_reconstruction/xsim_script.tcl}
+# Log file           : C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs/vendor_reconstruction_run.log
+# Journal file       : C:/Users/sohan/CODE/Project_Auris/.audit_verification/repair_runs\xsim.jou
+# Running On         : Sohan_PC
+# Platform           : Windows 11
+# Operating System   : 26200
+# Processor Detail   : Intel(R) Core(TM) Ultra 9 288V
+# CPU Frequency      : 3302 MHz
+# CPU Physical cores : 8
+# CPU Logical cores  : 8
+# Host memory        : 33895 MB
+# Swap memory        : 2550 MB
+# Total Virtual      : 36446 MB
+# Available Virtual  : 6404 MB
+#-----------------------------------------------------------
+source xsim.dir/vendor_reconstruction/xsim_script.tcl
+# xsim {vendor_reconstruction} -autoloadwcfg -runall
+Time resolution is 1 ps
+run -all
+Note:   - SCALING_SCH: in_ptr = 1, out_ptr = 1
+Time: 0 ps  Iteration: 0  Process: /tb_pipeline_reconstruction/dut/u_ifft_256/u_ifft_256_core/U0/i_synth/axi_wrapper/gen_config_fifo_in/line__94237  File: C:\AMDDesignTools\2026.1\Vivado\data/ip/xilinx/xfft_v9_1/hdl/xfft_v9_1_vh_rfs.vhd
+Note:   - SCALING_SCH: in_ptr = 1, out_ptr = 1
+Time: 0 ps  Iteration: 0  Process: /tb_pipeline_reconstruction/dut/u_fft_256/u_fft_256_core/U0/i_synth/axi_wrapper/gen_config_fifo_in/line__94237  File: C:\AMDDesignTools\2026.1\Vivado\data/ip/xilinx/xfft_v9_1/hdl/xfft_v9_1_vh_rfs.vhd
+Note:   - SCALING_SCH: in_ptr = 1, out_ptr = 1
+Time: 0 ps  Iteration: 1  Process: /tb_pipeline_reconstruction/dut/u_fft_256/u_fft_256_core/U0/i_synth/axi_wrapper/gen_config_fifo_in/line__94237  File: C:\AMDDesignTools\2026.1\Vivado\data/ip/xilinx/xfft_v9_1/hdl/xfft_v9_1_vh_rfs.vhd
+Note:   - SCALING_SCH: in_ptr = 1, out_ptr = 1
+Time: 0 ps  Iteration: 1  Process: /tb_pipeline_reconstruction/dut/u_ifft_256/u_ifft_256_core/U0/i_synth/axi_wrapper/gen_config_fifo_in/line__94237  File: C:\AMDDesignTools\2026.1\Vivado\data/ip/xilinx/xfft_v9_1/hdl/xfft_v9_1_vh_rfs.vhd
+VENDOR_RECONSTRUCTION_PASS transaction_level_frames=16 OLA=2048 output=1920 max_ola_error=709 max_output_error=709 bound=8192 exponent_changes=11
+$finish called at time : 745993920 ps : File "C:/Users/sohan/CODE/Project_Auris/fpga/sim/testbenches/tb_pipeline_reconstruction.sv" Line 86
+run: Time (s): cpu = 00:00:00 ; elapsed = 00:01:21 . Memory (MB): peak = 229.840 ; gain = 0.000
+exit
+INFO: xsimkernel Simulation Memory Usage: 59420 KB (Peak: 59420 KB), Simulation CPU Usage: 79030 ms
+INFO: [Common 17-206] Exiting xsim at Thu Oct 29 02:53:27 2026...

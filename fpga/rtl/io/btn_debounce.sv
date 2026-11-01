@@ -2,7 +2,7 @@
 // File:        btn_debounce.sv
 // Project:     Project Auris
 // Module:      btn_debounce
-// Description: Debounced button input for active-low push buttons on the
+// Description: Debounced button input for active-high push buttons on the
 //              Arty S7-25.  Each button produces a single-cycle pulse on
 //              press (leading edge) and a separate single-cycle pulse on
 //              release (trailing edge).
@@ -12,8 +12,8 @@
 //              the output changes state only after the input has been
 //              stable for DEBOUNCE_CYCLES consecutive clock cycles.
 //
-//              Arty S7-25 buttons are active-low (pressed = 0).
-//              The module internally inverts so `btn_pressed_o` is
+//              Arty S7-25 buttons are active-high (pressed = 1).
+//              The module preserves polarity so `btn_pressed_o` is
 //              active-high (1 = pressed).
 //
 // Author:      [generated]
@@ -31,7 +31,7 @@ module btn_debounce #(
     input  wire                          clk_i,
     input  wire                          rst_n_i,
 
-    // Active-low button inputs (directly from FPGA pins)
+    // Active-high button inputs (directly from FPGA pins)
     input  wire [NUM_BUTTONS-1:0]        btn_i,
 
     // Debounced button state (active-high: 1 = pressed)
@@ -53,22 +53,22 @@ module btn_debounce #(
     // -------------------------------------------------------------------------
     // Per-button debounce logic
     // -------------------------------------------------------------------------
-    logic [NUM_BUTTONS-1:0] btn_sync_0;    // first sync FF
-    logic [NUM_BUTTONS-1:0] btn_sync_1;    // second sync FF (meta-stable safe)
+    (* ASYNC_REG = "TRUE" *) logic [NUM_BUTTONS-1:0] btn_sync_0;    // first sync FF
+    (* ASYNC_REG = "TRUE" *) logic [NUM_BUTTONS-1:0] btn_sync_1;    // second sync FF (meta-stable safe)
     logic [NUM_BUTTONS-1:0] btn_state;     // debounced state (active-high)
     logic [NUM_BUTTONS-1:0] btn_state_d;   // delayed state for edge detect
 
-    (* CNT_WIDTH *) logic [CNT_WIDTH-1:0] cnt [0:NUM_BUTTONS-1];
+    logic [CNT_WIDTH-1:0] cnt [0:NUM_BUTTONS-1];
 
     // -------------------------------------------------------------------------
-    // 2-FF synchroniser + active-low to active-high inversion
+    // 2-FF synchroniser for asynchronous board inputs
     // -------------------------------------------------------------------------
     always_ff @(posedge clk_i or negedge rst_n_i) begin
         if (!rst_n_i) begin
             btn_sync_0 <= {NUM_BUTTONS{1'b0}};
             btn_sync_1 <= {NUM_BUTTONS{1'b0}};
         end else begin
-            btn_sync_0 <= ~btn_i;    // invert: active-low → active-high
+            btn_sync_0 <= btn_i;     // board high means pressed
             btn_sync_1 <= btn_sync_0;
         end
     end
@@ -120,8 +120,8 @@ module btn_debounce #(
     // Synthesis-time sanity
     // -------------------------------------------------------------------------
     initial begin
-        if (DEBOUNCE_CYCLES < 2)
-            $display("WARNING: btn_debounce DEBOUNCE_CYCLES=%0d too small", DEBOUNCE_CYCLES);
+        if (DEBOUNCE_CYCLES < 2 || NUM_BUTTONS < 1)
+            $fatal(1, "btn_debounce requires DEBOUNCE_CYCLES >= 2 and NUM_BUTTONS >= 1");
     end
 
 endmodule : btn_debounce

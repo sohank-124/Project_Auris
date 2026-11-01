@@ -32,8 +32,8 @@ module selftest_stimulus #(
     output logic                     sample_v_o
 );
 
-    localparam int unsigned DIVISOR = (CLK_HZ / SAMPLE_HZ);
-    localparam int unsigned DIV_W   = $clog2(DIVISOR);
+    localparam int unsigned DIVISOR = (SAMPLE_HZ == 0) ? 1 : (CLK_HZ / SAMPLE_HZ);
+    localparam int unsigned DIV_W   = (DIVISOR <= 1) ? 1 : $clog2(DIVISOR);
 
     logic [DIV_W-1:0] div_ctr;
     logic [23:0] phase_acc;
@@ -93,8 +93,11 @@ module selftest_stimulus #(
     end
 
     initial begin
-        if ((CLK_HZ % SAMPLE_HZ) != 0) begin
-            $display("ERROR: selftest_stimulus requires integer CLK_HZ/SAMPLE_HZ ratio");
+        if (SAMPLE_HZ == 0 || CLK_HZ == 0 || SAMPLE_HZ > CLK_HZ ||
+            SAMPLE_W != 24) begin
+            $fatal(1, "selftest_stimulus requires positive rates, SAMPLE_HZ <= CLK_HZ, SAMPLE_W=24");
+        end else if ((CLK_HZ % SAMPLE_HZ) != 0) begin
+            $fatal(1, "selftest_stimulus requires integer CLK_HZ/SAMPLE_HZ ratio");
         end
     end
 

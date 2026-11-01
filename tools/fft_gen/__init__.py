@@ -34,9 +34,17 @@ from .validate_fft import (
 )
 
 __all__ = [
-    "FFTConfig", "reference_dft", "reference_idft",
-    "generate_fft_config", "generate_vivado_tcl",
-    "generate_twiddle_table", "generate_twiddle_file", "twiddle_to_complex",
-    "check_parseval", "check_linearity", "check_known_signal",
-    "check_bin_frequency_mapping", "validate_all",
+    "FFTConfig",
+    "reference_dft",
+    "reference_idft",
+    "generate_fft_config",
+    "generate_vivado_tcl",
+    "generate_twiddle_table",
+    "generate_twiddle_file",
+    "twiddle_to_complex",
+    "check_parseval",
+    "check_linearity",
+    "check_known_signal",
+    "check_bin_frequency_mapping",
+    "validate_all",
 ]

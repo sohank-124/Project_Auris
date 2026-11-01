@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, List, Sequence
 
 
 # ---------------------------------------------------------------------------
@@ -26,15 +26,13 @@ def _ensure_parent(path: Path) -> None:
 
 def _to_hex_word(v: int, width: int = 4) -> str:
     """Format ``v`` as a zero-padded uppercase hex string of ``width`` chars."""
-    return f"{(int(v) & ((1 << (4 * width)) - 1)):0{4 * width}X}"
+    return f"{(int(v) & ((1 << (4 * width)) - 1)):0{width}X}"
 
 
 # ---------------------------------------------------------------------------
 # Public writers
 # ---------------------------------------------------------------------------
-def write_hex(values: Sequence[int],
-              path: Path,
-              header: str = "") -> None:
+def write_hex(values: Sequence[int], path: Path, header: str = "") -> None:
     """Write ``values`` as 4-char hex, one per line.
 
     Parameters
@@ -56,10 +54,9 @@ def write_hex(values: Sequence[int],
             f.write(f"{_to_hex_word(v, width=4)}\n")
 
 
-def write_coe(values: Sequence[int],
-              path: Path,
-              radix: int = 16,
-              width: int = 16) -> None:
+def write_coe(
+    values: Sequence[int], path: Path, radix: int = 16, width: int = 16
+) -> None:
     """Write ``values`` in Xilinx COE format.
 
     The output begins with ``memory_initialization_radix=<radix>;`` and
@@ -85,10 +82,7 @@ def write_coe(values: Sequence[int],
                 f.write(f"{int(v)}{sep}\n")
 
 
-def write_mif(values: Sequence[int],
-              path: Path,
-              depth: int,
-              width: int = 16) -> None:
+def write_mif(values: Sequence[int], path: Path, depth: int, width: int = 16) -> None:
     """Write ``values`` in Altera MIF format.
 
     Parameters
@@ -114,8 +108,7 @@ def write_mif(values: Sequence[int],
         f.write("END;\n")
 
 
-def write_readmemb(values: Sequence[int],
-                   path: Path) -> None:
+def write_readmemb(values: Sequence[int], path: Path) -> None:
     """Write ``values`` in ``$readmemb``-compatible binary form.
 
     Each value is rendered as a ``width``-bit binary string, one per line.
@@ -130,9 +123,7 @@ def write_readmemb(values: Sequence[int],
 # ---------------------------------------------------------------------------
 # Human-readable and JSON writers
 # ---------------------------------------------------------------------------
-def write_txt_table(rows: Sequence[Dict],
-                    path: Path,
-                    columns: Sequence[str]) -> None:
+def write_txt_table(rows: Sequence[Dict], path: Path, columns: Sequence[str]) -> None:
     """Write a list of dicts as a tab-separated table.
 
     The header row is the column names; missing keys are emitted as
@@ -163,9 +154,7 @@ def write_json(data: Dict, path: Path) -> None:
 # ---------------------------------------------------------------------------
 # Composite writer
 # ---------------------------------------------------------------------------
-def write_all(values: Sequence[int],
-              base_path: Path,
-              header: str = "") -> None:
+def write_all(values: Sequence[int], base_path: Path, header: str = "") -> None:
     """Write ``values`` in .hex, .coe, and .txt forms (no extension).
 
     The three files share the same ``base_path`` and are suffixed with
@@ -175,8 +164,7 @@ def write_all(values: Sequence[int],
     write_hex(values, Path(str(base_path) + ".hex"), header=header)
     write_coe(values, Path(str(base_path) + ".coe"))
     _ensure_parent(Path(str(base_path) + ".txt"))
-    with open(Path(str(base_path) + ".txt"), "w", encoding="utf-8",
-              newline="\n") as f:
+    with open(Path(str(base_path) + ".txt"), "w", encoding="utf-8", newline="\n") as f:
         if header:
             for line in header.splitlines() or [""]:
                 f.write(f"# {line}\n" if line else "#\n")

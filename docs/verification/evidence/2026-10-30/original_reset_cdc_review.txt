@@ -1,0 +1,255 @@
+# F25 reset and CDC code acceptance — 2026-10-30
+
+Status: reset-release implementation and manual CDC review accepted for the
+current production top, default depth-4/24-bit FIFOs, and common reset contract.
+Overall F25 remains open for external timing data and physical codec/PLL checks.
+The `build_final` implementation and `*_final.log` files are authoritative here;
+`build` and the earlier logs record the superseded all-stage-ASYNC_REG variant.
+The earlier `f25_current` evidence predates this RTL repair.
+
+## Engineering explanation: root cause and selected repair
+
+FACT/source: clk_gen used raw MMCM LOCKED to clear functional counter/output
+registers. reset_sync_stretch used parallel two-stage and delay chains followed
+by a multi-input AND. The old route reported a LUT-driven async reset warning.
+INFERENCE: asynchronous release of functional state and combinational reset
+reduction made startup/reset safety insufficiently established. No observed
+metastability failure or negative data-path slack motivated this change.
+Origin: RTL reset architecture, not the testbench or timing constraints.
+
+A new reusable reset_release module asynchronously clears its stages, shifts
+release through the first two synchronizer FFs and optional delay stages, and
+uses only the final FF as the reset source. Only the first two FFs carry
+ASYNC_REG; all stages prohibit SRL extraction. The initial version tagged all16
+stages and produced PDRC-190 placement warnings. The final implementation
+corrects that physical intent without changing release-cycle counts.
+
+clk_gen now synchronizes BCLK-generator release to rising DSP edges and
+LRCLK-generator release to falling BCLK edges. The top helper preserves
+max(STRETCH_CYCLES,2) cycles, including the default16. It delegates to the shared
+module. Clock ratios, ports, frame processing order and steady-state audio
+latency/throughput remain unchanged. Startup adds two DSP edges before BCLK
+state runs and two falling BCLK edges before LRCLK state runs.
+
+Alternatives: keeping the old circuitry and suppressing timing warnings would
+not establish a release mechanism. Replacing the fractional clock architecture
+would be much broader and would not remove the need for reset synchronization.
+A reset counter plus extra output register could work, but adds state/decoding
+and more corner cases to verify. The shared shift-release module has an explicit
+cycle count, straightforward simulation and reusable edge selection.
+
+Pros: removes multi-input reset-output logic; gives deterministic digital
+startup sequencing; confines the physical synchronizer placement requirement
+to the first pair; preserves data throughput, existing interface latency and
+clocking resources. One implementation serves the clock generator and both top
+reset domains, reducing duplicate maintenance and making regressions readable.
+
+Cons: four new clock-generator synchronizer FFs and added startup wait; default
+top chains save four FFs, making the measured total unchanged. The ordinary
+later stages still require reset propagation timing, so synchronization is not
+a substitute for routed recovery/removal analysis. New module/build dependencies
+and edge-specific tests must be maintained. High-fanout reset routing remains
+physical implementation work. Arbitrary one-sided FIFO reset is not supported.
+
+Modules changed: clk_gen, top's reset_sync_stretch helper; new reset_release.
+FIFO data/pointer RTL and both XDC files are unchanged. No exception or waiver
+was added. Verification rerun: reset phases/stopped-clock tests, concurrent FIFO
+scoreboards, existing clock and FIFO regressions, full-top reset integration,
+negative controls, synthesis/implementation, detailed routed topology/timing.
+No full HDL suite or audio numerical reconstruction rerun: arithmetic and
+stream-stage latency were not modified. Existing full-suite evidence is older.
+
+Plain language: reset stops everything immediately. Restart then waits for the
+appropriate clock and a small chain of registers. A single registered source
+replaces the old reset-combining tree. Later waiting registers do not need the
+same placement treatment as the first two synchronization registers.
+
+## Focused verification (FACT)
+
+All simulations use the installed Vivado2026.1 and the shared strict contract:
+completion must equal1; a simulator transcript must exist; Error/Fatal diagnostics
+reject the run. Explicit markers are checked by verify_evidence.py. The negative
+runs must fail with their particular diagnostic, not a compile/setup failure.
+
+| Test | Observed result | Evidence |
+| --- | --- | --- |
+| reset_release | 20 release phases, stopped clock, 8 injected lock restarts,1200 BCLK edges | focused_final.log, final_sim_reset_release |
+| cdc_stress | both FIFO modules at both speed directions;12 epochs,6 traffic resets,6 complete drains; all24 bits seen as0 and1 | cdc_fullwidth.log, fullwidth_sim_cdc_stress |
+| Existing clk_gen | 96000/3072/48 rising edges per ms;6144 half periods | focused_final.log |
+| Existing cdc_fifo | 256 ordered reads per implementation; capacity, overfill, empty, reset | focused_final.log |
+| top_reset | 3 restart epochs, actual MMCM/FFT models, four FIFO pointer pairs cleared | top_reset.log |
+| Cold top_reset entry | test-local FFT/IP generation and same integration PASS | top_reset_cold.log |
+| Old clock reset negative control | rejected: BCLK state released before two synchronization edges | faults_final.log |
+| Corrupted FIFO negative control | rejected: actual head differs from independent expected queue, including expanded full-width stimulus | faults_fullwidth.log |
+
+Each stress-case queue records only accepted writes and compares the head on
+EVERY valid read-domain edge, even when consumption stalls. Rejected writes must
+not change the queue, accepted occupancy cannot exceed4, complete drains must
+balance writes and reads, and reset starts a new queue epoch without requiring
+RAM contents to be erased. Driver clocks have different rates/phases and
+noncoincident edges to prevent a testbench shared-queue race. Deterministic LFSRs
+provide stalls, continuous traffic and reproducible full/empty boundary pressure.
+The final stimulus uses full-width LFSR data mixed with a sequence counter;
+accepted-word coverage asserts that EVERY one of24 bits was both0 and1.
+The earlier counter-field stimulus did not exercise every upper bit and was
+superseded by cdc_fullwidth.log; the corruption negative control was rerun.
+
+Cases0/2:858 writes,834 reads,27227 full rejections and56 empty-read attempts
+each. Cases1/3:893 writes/reads and27179 empty-read attempts each. The48 total
+unread words in cases0/2 were deliberately discarded by occupied-queue resets;
+they are not lost-word failures. Both accepted FIFO heads and exact ordering
+are checked, independent of DUT pointers or DUT arithmetic.
+
+These are bounded simulations, not exhaustive formal verification or a model
+of analog metastability. The clock restart test injects LOCKED transitions while
+using real MMCM clock models. It verifies internal response if clock/lock return;
+it does not establish autonomous physical MMCM relock. MMCM.RST remains tied low,
+and autonomous real clock-fault recovery is not a feature added by this repair.
+Stopped-clock release is separately tested on the reset module. Board tests
+must establish actual oscillator/MMCM/codec behavior and valid external timing.
+
+## Routed reset acceptance (FACT)
+
+The final route has1470 CLR/PRE pins. All are accounted for:
+
+| Local reset chain | Stages | Timed downstream controls | Worst recovery/removal margin(ns) |
+| --- | ---: | ---: | --- |
+| u_rst_dsp/u_release |16|1236|+2.409 /+1.494|
+| u_rst_i2s/u_release |16|183|+146.167 /+0.790|
+| u_clk_gen/u_bclk_reset |2|8|+7.288 /+0.661|
+| u_clk_gen/u_lrclk_reset |2|7|+312.205 /+0.713|
+
+The remaining36 raw-LOCKED controls belong ONLY to these four release chains
+(8 synchronizer FFs plus28 delay FFs). No raw LOCKED clear reaches a functional
+counter or audio state register. Raw LOCKED still has27 status-logic data
+endpoints, qualified by DSP-ready = LOCKED AND rst_dsp_n. Rising LOCKED is
+masked until16 DSP edges; falling LOCKED also asynchronously clears the reset
+chains/status. This masking is part of the manual source review.
+
+All four first-stage/second-stage pairs are physically co-located:
+DSP SLICE_X13Y41; I2S SLICE_X12Y15; BCLK-generator SLICE_X16Y46;
+LRCLK-generator SLICE_X3Y14. Only those8 FFs carry synchronization placement
+intent. Later delay FFs receive already synchronized data and are not tagged
+as a giant synchronizer. No LUTAR-1 or PDRC-190 warnings remain.
+
+The1434 downstream controls are each sourced by one final FF through a
+single-input LUT polarity inversion (INIT2'h1/2'h2 only). This is1434 CONTROL
+CONNECTIONS, not1434 inverter LUTs. No multi-input reset driver is accepted.
+A one-input inversion cannot generate reconvergent-input glitches. The script
+checks actual leaf drivers, not hierarchy-boundary pins. The helper's final
+release stage provides the digital edge; routed checks cover its propagation
+including negative-edge consumers.
+
+A report-only assertion initially failed because Vivado synthesizes generate
+scope names with dots and because a net query included hierarchy pins. Both
+were query defects, corrected without altering RTL. Failed topology logs are
+retained; reset_topology_final.log and F25_RESET_TOPOLOGY_PASS establish final
+coverage. Source snapshots and rtl_changes.patch preserve existing user edits.
+
+Plain language: every ordinary state register now gets reset from a registered
+release signal. Only the reset-generating chains themselves receive raw LOCKED.
+The two registers that catch an uncertain release edge are placed close together;
+the rest provide waiting time. The timing checker confirms reset reaches its
+consumers with positive margin.
+
+## Manual CDC acceptance matrix
+
+All report_cdc classifications are retained; this is NOT a clean automatic CDC
+report. No ASYNC_REG is added to audio data, no timing exception is widened,
+and no blanket waiver is used. The following accepts the current endpoint
+families against a specific protocol, physical bound, and regression contract.
+
+| Tool finding | Exact family | Protocol and physical acceptance argument |
+| --- | --- | --- |
+| CDC-6 x8 | Four FIFO write/read Gray-pointer groups | Registered Gray encoding changes one bit per accepted step. First-stage max-delay10ns and skew10ns are below fastest10.4167ns update. Second-stage setup/hold remains timed; both stages retain ASYNC_REG. Concurrent wrap/full/empty traffic passes. |
+| CDC-13 x48 | Incoming L/R RAM to input_buffer BRAM DI pins | Write data remains owned until synchronized write pointer publishes it. BRAM write enable requires dsp_in_valid = both FIFOs nonempty. Capture cannot occur on the pointer's first or second synchronization edge; complete consumer propagation is bounded to10ns. |
+| CDC-1 x1 | Incoming left RAM to clip_event_o | Comparison is qualified by sample_valid_i, derived from the same synchronized availability. Invalid combinational data cannot produce an accepted clip sample. The complete compare path is included in the10ns RAM bound. |
+| CDC-15 x79 |32 noise-envelope accumulator D pins,23 TX shift-register D pins,24 TX right-shadow D pins | Noise update uses dsp_in_valid. TX captures only with paired FIFO availability at the slot boundary. Data stable before valid and protected against overwrite by synchronized return pointer. All complete source-to-consumer paths are bounded, not just FIFO output wires. |
+| CDC-10 x1 and duplicate CDC-2 x1 | Outgoing left RAM to TX sdata_q | sdata_q selects the next sample's MSB only when valid_i is true; otherwise silence. Both output FIFOs pop only at the paired frame boundary. sdata_q/sdata_o are serializer data stages, not an asynchronous bit synchronizer. Adding ASYNC_REG would misdescribe them. |
+| CDC-3 informational x5 | Four button inputs and sticky RX-drop | Actual two-stage synchronizers with ASYNC_REG. The sticky event cannot disappear before the DSP observes it. Button external paths end only at the first stage. |
+
+Data-path count reconciliation:48 +1 +79 +1 =129 RAM consumer endpoints;
+57 incoming-left +24 incoming-right +24 outgoing-left +24 outgoing-right =129.
+CDC-2 and CDC-10 describe the same TX endpoint, not an additional transfer.
+
+Stability reasoning: on an empty-to-nonempty transition, the write pointer
+passes through a first destination FF and then a second FF. Availability changes
+after the second edge; the consumer captures at a later edge. Even the fastest
+DSP consumer therefore has more than one full10.4167ns cycle for a RAM path
+bounded to10ns. Once readable, the current word cannot be overwritten: its
+slot becomes reusable only after read acceptance and synchronized return of the
+read pointer. When the read address changes, ordinary read-domain setup/hold
+checks still apply. Gray bus bounds prevent overlapping multi-bit transitions
+from different source increments from defeating the encoding assumption.
+
+RESET CONTRACT: both sides must share the same asynchronous reset epoch;
+release may occur at different clock edges/times. The production top meets this
+through the common LOCKED request and local release chains. Arbitrary independent
+one-sided runtime resets are not supported by these FIFOs and are not claimed
+by these tests. This review must be reopened if reset policy, FIFO depth/width,
+consumer qualification, clock frequencies, or physical path bounds change.
+
+Plain language: the sample is stored before a synchronized pointer says it is
+ready, and its slot is kept until it has been consumed. The tests check the
+actual sample sequence while clocks run at different speeds and reset together.
+The tool cannot infer this entire custom protocol, so its warnings remain next
+to this explicit review rather than being silenced.
+
+## Final full-top implementation (FACT)
+
+Vivado2026.1, xc7s25csga324-1, production top, both self-test generics0.
+Setup WNS+0.696ns/TNS0,0 of18998 endpoints failing. Hold WHS+0.019ns/THS0,
+0 of18973 failing. Pulse-width worst margin+3.958ns; no failures.
+No missing clocks or unconstrained internal endpoints under check_timing's
+standard definitions; raw reset-chain assertion is separately accounted for.
+All8 Gray skew bounds pass, minimum margin+8.998ns. All24 first-stage paths
+have10ns requirements, and24 second-stage setup/hold paths remain timed.
+All13 max-datapath and2 explicit false-path rules remain unchanged; none ignored.
+
+RAM maximum-delay margins: incoming L+3.608ns/R+7.502ns; outgoing L+7.340ns/
+R+7.500ns. Source groups still reach57/24/24/24 full-top consumer endpoints.
+Conditional ADC setup/hold+39.198/+154.109ns; DAC+140.753/+142.228ns;
+LRCLK+139.652/+130.494ns. These I/O passes depend on unchanged PROVISIONAL
+external delay assumptions; this code repair does not validate those numbers.
+
+Critical setup: volume_level[0] to volume_ctrl/out_r_o[13],9.439ns data delay =
+5.725ns logic +3.714ns routing, seven logic levels. Same arithmetic family as
+the older+0.371ns pre-repair route (9.811ns =5.746 logic +4.065 routing).
+Improved slack reflects different placement/routing, not a new arithmetic
+pipeline. Critical hold remains vendor IFFT FDRE-to-RAMB18E1,0.318ns data delay
+=0.148ns cell +0.170ns routing; internal encrypted names are hidden by Vivado.
+No failing setup/hold path requires a new pipeline. A data pipeline would add
+latency/registers/valid-alignment work and would not replace reset synchronization.
+
+Final usage:6165 LUTs (previous6168),9851 FFs (unchanged),6.5 BRAM36-equivalent
+tiles,28 DSP48s,3 BUFGs,1 MMCM (all unchanged). Four added clock-generator FFs
+offset four removed redundant top-chain FFs. The small LUT reduction follows
+removing reduction trees; there is no broad routing-congestion improvement claim.
+
+## Reproduction and remaining limits
+
+From this evidence directory, use project Vivado in batch mode with these
+source/log pairs (each command exits nonzero on setup/contract failure):
+
+- focused.tcl -> focused_final.log
+- faults.tcl -> faults_final.log (intentional simulator fatals must be rejected)
+- cdc_fullwidth.tcl -> cdc_fullwidth.log (final all-data-bit coverage)
+- faults_fullwidth.tcl -> faults_fullwidth.log (final data-corruption rejection)
+- top_reset.tcl -> top_reset.log (shared existing IP models)
+- top_reset_cold.tcl -> top_reset_cold.log (real registered entry, test-local IP)
+- build.tcl -> build_final.log (source wrapper selects build_final)
+- report.tcl -> report_final.log
+- reset_topology.tcl -> reset_topology_final.log
+
+Example: `C:/AMDDesignTools/2026.1/Vivado/bin/vivado.bat -mode batch -source build.tcl -log build_final.log -journal build_final.jou`.
+Run the project Python executable on `verify_evidence.py` from this directory
+or repository root; it anchors paths to itself and writes the summary/hash files.
+Active bench entries are registered as sim_reset_release, sim_cdc_stress and
+sim_top_reset; the full aggregate HDL suite was not run.
+
+Code acceptance is limited to the recorded sources/configuration, standard
+synchronizer assumptions, complete timing bounds and coordinated reset policy.
+There is no analog metastability simulation or measured MTBF claim. No hardware
+was programmed. F25 still needs sourced/measured PCB/cable flight/skew/loading,
+microphone output timing, and actual receiver clock/PLL behavior. No arbitrary
+trace or codec margin was invented to close those items.

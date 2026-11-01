@@ -8,7 +8,7 @@
 #   2. run Python generators (Hann window, default gain tables)
 #   3. collect release artifacts:
 #        - generated .hex / .coe tables
-#        - hardware/bom.csv
+#        - hardware/bom/bom.csv
 #        - LICENSE
 #        - CHANGELOG.md
 #        packaged into a single tar.gz
@@ -84,16 +84,13 @@ jobs:
           rm -rf "${{ env.ARTIFACT_DIR }}"
           mkdir -p "${{ env.ARTIFACT_DIR }}/generated"
 
-          # Generated tables (created in step 2)
-          cp -v fpga/generated/*.hex "${{ env.ARTIFACT_DIR }}/generated/" 2>/dev/null || true
-          cp -v fpga/generated/*.coe "${{ env.ARTIFACT_DIR }}/generated/" 2>/dev/null || true
+          # Inspection exports and provenance; not active RTL initialization inputs
+          cp -v fpga/generated/*.hex "${{ env.ARTIFACT_DIR }}/generated/"
+          cp -v fpga/generated/*.coe "${{ env.ARTIFACT_DIR }}/generated/"
+          cp -v fpga/generated/*.json "${{ env.ARTIFACT_DIR }}/generated/"
 
           # Bill of materials (source-controlled CSV in hardware/)
-          if [ -f hardware/bom.csv ]; then
-            cp -v hardware/bom.csv "${{ env.ARTIFACT_DIR }}/"
-          else
-            echo "::warning::hardware/bom.csv not found; skipping."
-          fi
+          cp -v hardware/bom/bom.csv "${{ env.ARTIFACT_DIR }}/bom.csv"
 
           # Legal & changelog
           cp -v LICENSE       "${{ env.ARTIFACT_DIR }}/"
@@ -106,7 +103,7 @@ Project Auris release artifacts
 
 Contents:
   generated/        Generated coefficient & gain tables (Hann window, default
-                    gain profiles) for FPGA ROM initialisation
+                    gain profiles) and JSON provenance; inspection only, not RTL inputs
   bom.csv           Hardware bill of materials
   LICENSE           MIT license
   CHANGELOG.md      Project changelog
@@ -154,6 +151,7 @@ EOF
             ${{ env.TARBALL }}
             ${{ env.ARTIFACT_DIR }}/generated/*.hex
             ${{ env.ARTIFACT_DIR }}/generated/*.coe
+            ${{ env.ARTIFACT_DIR }}/generated/*.json
             ${{ env.ARTIFACT_DIR }}/bom.csv
             ${{ env.ARTIFACT_DIR }}/LICENSE
             ${{ env.ARTIFACT_DIR }}/CHANGELOG.md
@@ -166,9 +164,10 @@ EOF
 
             ### Programming the FPGA
 
-            Use the `.coe` / `.hex` files in `generated/` as BRAM
-            initialisation data inside Vivado, and follow the bitstream
-            build steps in `README.md` to produce the final `.bit`.
+            Follow the bitstream build steps in `README.md` to produce the
+            final `.bit`. Files in `generated/` are inspection exports with
+            JSON provenance. Current RTL computes Hann coefficients internally
+            and embeds mode tables; editing these exports does not change hardware.
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

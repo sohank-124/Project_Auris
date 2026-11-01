@@ -70,18 +70,9 @@ update_compile_order -fileset sim_1
 # 4. Launch and run
 # ---------------------------------------------------------------------------
 puts "Launching xsim ..."
-launch_simulation
+source [file join $script_dir simulation_common.tcl]
+auris_run_simulation /tb_btn_debounce/test_done {600 ms}
 
-# 100 us is sufficient because the testbench uses a 1 MHz internal clock
-# (period 1000 ns) for simulation speed; the stimulus script finishes
-# well before 100 us of simulated time.
-puts "Running 600 ms ..."
-run 600 ms
-
-# ---------------------------------------------------------------------------
-# 5. Tear down
-# ---------------------------------------------------------------------------
-close_sim -force
 close_project
 
 puts "============================================================"

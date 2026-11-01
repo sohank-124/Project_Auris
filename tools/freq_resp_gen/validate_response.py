@@ -33,8 +33,7 @@ from common.constants import FS, TOL_DB
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
-def check_flatness(gains_db: List[float],
-                   tol_db: float = 0.5) -> Tuple[bool, float]:
+def check_flatness(gains_db: List[float], tol_db: float = 0.5) -> Tuple[bool, float]:
     """Return ``(ok, max_deviation)`` for a gain curve.
 
     The "flat" target is the mean of the input; the deviation of every
@@ -76,10 +75,9 @@ def measure_ripple(gains_db: List[float]) -> Tuple[float, float, float]:
     return (peak_to_peak, max_db, min_db)
 
 
-def compute_group_delay(b: Sequence[float],
-                        a: Sequence[float],
-                        n_points: int = 512,
-                        fs: float = FS) -> List[float]:
+def compute_group_delay(
+    b: Sequence[float], a: Sequence[float], n_points: int = 512, fs: float = FS
+) -> List[float]:
     """Compute the group delay of an IIR filter (b, a).
 
     Group delay is defined as ``tau(omega) = -d phi / d omega`` where
@@ -95,17 +93,16 @@ def compute_group_delay(b: Sequence[float],
     if not b or not a:
         raise ValueError("compute_group_delay: empty b or a")
     if n_points < 3:
-        raise ValueError(
-            f"compute_group_delay: n_points must be >= 3 (got {n_points})"
-        )
+        raise ValueError(f"compute_group_delay: n_points must be >= 3 (got {n_points})")
 
     # Try SciPy first.
     try:
-        from scipy.signal import group_delay as _gd          # type: ignore
+        from scipy.signal import group_delay as _gd  # type: ignore
+
         # SciPy returns (w, tau) in radians and seconds; we want samples
         # so divide tau by the sample period.
         w, tau = _gd(b, a, worN=n_points, fs=fs)
-        return [float(t) * fs for t in tau]   # SciPy returns seconds; convert to samples
+        return [float(t) * fs for t in tau]  # SciPy returns seconds; convert to samples
     except Exception:
         pass
 
@@ -118,15 +115,12 @@ def compute_group_delay(b: Sequence[float],
     last_phase = None
     h_vals: List[complex] = []
     for w in omegas:
-        num = complex(sum(bk * cmath.exp(-1j * w * k)
-                          for k, bk in enumerate(b)), 0.0)
-        den = complex(sum(ak * cmath.exp(-1j * w * k)
-                          for k, ak in enumerate(a)), 0.0)
+        num = complex(sum(bk * cmath.exp(-1j * w * k) for k, bk in enumerate(b)), 0.0)
+        den = complex(sum(ak * cmath.exp(-1j * w * k) for k, ak in enumerate(a)), 0.0)
         h_vals.append(num / den if abs(den) > 0 else complex(float("inf"), 0.0))
 
     # Unwrap the phase.
     phases: List[float] = []
-    last = 0.0
     for h in h_vals:
         p = cmath.phase(h)
         if last_phase is not None:
@@ -154,10 +148,9 @@ def compute_group_delay(b: Sequence[float],
     return out
 
 
-def validate_gain_response(gains_db: List[float],
-                            expected: List[float],
-                            tol_db: float = TOL_DB
-                            ) -> Tuple[bool, float]:
+def validate_gain_response(
+    gains_db: List[float], expected: List[float], tol_db: float = TOL_DB
+) -> Tuple[bool, float]:
     """Compare a measured gain curve against an expected reference.
 
     Returns ``(ok, max_error_db)``.  ``ok`` is True if every element of
@@ -199,12 +192,24 @@ def main(argv: List[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         description="Validate a frequency / gain response curve.",
     )
-    p.add_argument("--input-file", type=Path, required=True,
-                   help="Measured gain file (one float per line).")
-    p.add_argument("--expected-file", type=Path, default=None,
-                   help="Expected gain file (one float per line).")
-    p.add_argument("--tol", type=float, default=TOL_DB,
-                   help="Tolerance in dB (default: %(default)s)")
+    p.add_argument(
+        "--input-file",
+        type=Path,
+        required=True,
+        help="Measured gain file (one float per line).",
+    )
+    p.add_argument(
+        "--expected-file",
+        type=Path,
+        default=None,
+        help="Expected gain file (one float per line).",
+    )
+    p.add_argument(
+        "--tol",
+        type=float,
+        default=TOL_DB,
+        help="Tolerance in dB (default: %(default)s)",
+    )
     args = p.parse_args(argv)
 
     gains = _read_gain_file(args.input_file)
@@ -213,18 +218,24 @@ def main(argv: List[str] | None = None) -> int:
     print(f"Loaded {len(gains)} gain values from {args.input_file}")
 
     ok_flat, dev = check_flatness(gains, tol_db=args.tol)
-    print(f"Flatness check: {'PASS' if ok_flat else 'FAIL'}  "
-          f"(max deviation = {dev:.3f} dB, tol = {args.tol} dB)")
+    print(
+        f"Flatness check: {'PASS' if ok_flat else 'FAIL'}  "
+        f"(max deviation = {dev:.3f} dB, tol = {args.tol} dB)"
+    )
 
     p2p, g_max, g_min = measure_ripple(gains)
-    print(f"Ripple: peak-to-peak = {p2p:.3f} dB, "
-          f"max = {g_max:.3f} dB, min = {g_min:.3f} dB")
+    print(
+        f"Ripple: peak-to-peak = {p2p:.3f} dB, "
+        f"max = {g_max:.3f} dB, min = {g_min:.3f} dB"
+    )
 
     if args.expected_file is not None:
         expected = _read_gain_file(args.expected_file)
         ok, err = validate_gain_response(gains, expected, tol_db=args.tol)
-        print(f"Gain-response check: {'PASS' if ok else 'FAIL'}  "
-              f"(max error = {err:.3f} dB, tol = {args.tol} dB)")
+        print(
+            f"Gain-response check: {'PASS' if ok else 'FAIL'}  "
+            f"(max error = {err:.3f} dB, tol = {args.tol} dB)"
+        )
 
     return 0
 

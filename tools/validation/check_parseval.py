@@ -20,7 +20,6 @@ length-``N`` DFT.  This module checks the theorem in two regimes:
 from __future__ import annotations
 
 import argparse
-import math
 import sys
 from pathlib import Path
 from typing import List, Tuple
@@ -36,10 +35,9 @@ from common.constants import N_FFT, TOL_PARSEVAL_DB
 # ---------------------------------------------------------------------------
 # Float version
 # ---------------------------------------------------------------------------
-def check_parseval_time_freq(x_time: List[float],
-                             X_freq: List[complex],
-                             n_fft: int = N_FFT,
-                             tol: float = 1e-6) -> Tuple[bool, float, float]:
+def check_parseval_time_freq(
+    x_time: List[float], X_freq: List[complex], n_fft: int = N_FFT, tol: float = 1e-6
+) -> Tuple[bool, float, float]:
     """Verify Parseval's theorem for a real signal and its DFT.
 
     Parameters
@@ -78,10 +76,9 @@ def check_parseval_time_freq(x_time: List[float],
 # ---------------------------------------------------------------------------
 # Fixed-point version
 # ---------------------------------------------------------------------------
-def check_parseval_fixed_point(x_q14: List[int],
-                               X_q14: List[int],
-                               n_fft: int = N_FFT,
-                               tol_lsbs: int = 4) -> Tuple[bool, int, int]:
+def check_parseval_fixed_point(
+    x_q14: List[int], X_q14: List[int], n_fft: int = N_FFT, tol_lsbs: int = 4
+) -> Tuple[bool, int, int]:
     """Verify Parseval's theorem for a Q2.14 time / frequency pair.
 
     The time-domain energy is computed as the sum of squared
@@ -158,12 +155,24 @@ def main(argv: List[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         description="Parseval's theorem checker (float and Q2.14).",
     )
-    p.add_argument("--input-file", type=Path, required=True,
-                   help="Time-domain signal file (.txt or .hex).")
-    p.add_argument("--fft-file", type=Path, required=True,
-                   help="Frequency-domain DFT file (.txt or .hex).")
-    p.add_argument("--tol", type=float, default=TOL_PARSEVAL_DB,
-                   help="Tolerance (relative for float, LSBs for hex).")
+    p.add_argument(
+        "--input-file",
+        type=Path,
+        required=True,
+        help="Time-domain signal file (.txt or .hex).",
+    )
+    p.add_argument(
+        "--fft-file",
+        type=Path,
+        required=True,
+        help="Frequency-domain DFT file (.txt or .hex).",
+    )
+    p.add_argument(
+        "--tol",
+        type=float,
+        default=TOL_PARSEVAL_DB,
+        help="Tolerance (relative for float, LSBs for hex).",
+    )
     args = p.parse_args(argv)
 
     suffix_in = args.input_file.suffix.lower()
@@ -180,9 +189,7 @@ def main(argv: List[str] | None = None) -> int:
         x = _read_float_signal(args.input_file)
         X_raw = _read_float_signal(args.fft_file)
         X = [complex(re, 0.0) for re in X_raw]
-        ok, e_t, e_f = check_parseval_time_freq(
-            x, X, n_fft=len(X), tol=args.tol
-        )
+        ok, e_t, e_f = check_parseval_time_freq(x, X, n_fft=len(X), tol=args.tol)
         kind = "float (relative)"
 
     print(f"Parseval check ({kind}):")

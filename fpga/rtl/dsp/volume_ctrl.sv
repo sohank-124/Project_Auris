@@ -76,34 +76,22 @@ module volume_ctrl import auris_pkg::*; #(
     // The multiplication is signed(24-bit) × unsigned(16-bit Q2.14).
     // Result is 40 bits.  We take bits [37:14] (equivalent to >> 14)
     // and saturate to 24-bit signed range.
-    logic signed [39:0] mul_l, mul_r;
-    logic signed [23:0] scaled_l, scaled_r;
-
+    logic signed [DATA_W+16:0] mul_l, mul_r;
     assign mul_l = $signed(in_l_i) * $signed({1'b0, vol_gain});
     assign mul_r = $signed(in_r_i) * $signed({1'b0, vol_gain});
 
-    // Extract bits [37:14] (shift right by 14, keep 24 bits)
-    assign scaled_l = mul_l[37:14];
-    assign scaled_r = mul_r[37:14];
-
-    // -------------------------------------------------------------------------
-    // Saturation to 24-bit signed range
-    // -------------------------------------------------------------------------
-    function automatic logic [23:0] sat24(input logic signed [23:0] x,
-                                           input logic overflow);
-        if (overflow) begin
-            // Saturate to max positive or max negative
-            if (x[23]) sat24 = 24'sd8388607;   // +max (clip positive)
-            else       sat24 = -24'sd8388607;  // -max (clip negative)
-        end else begin
-            sat24 = x;
+    function automatic logic [DATA_W-1:0] scale_sat(
+        input logic signed [DATA_W+16:0] product);
+        logic signed [DATA_W+16:0] scaled;
+        begin
+            scaled = product >>> 14;
+            if (scaled > $signed({1'b0, {(DATA_W-1){1'b1}}}))
+                scale_sat = {1'b0, {(DATA_W-1){1'b1}}};
+            else if (scaled < $signed({1'b1, {(DATA_W-1){1'b0}}}))
+                scale_sat = {1'b1, {(DATA_W-1){1'b0}}};
+            else scale_sat = scaled[DATA_W-1:0];
         end
     endfunction
-
-    // Detect overflow: if the upper bits (above bit 23) are not all
-    // the same as bit 23, we have overflow.
-    wire ovf_l = (mul_l[39:24] != {16{mul_l[23]}});
-    wire ovf_r = (mul_r[39:24] != {16{mul_r[23]}});
 
     // -------------------------------------------------------------------------
     // Registered output with mute
@@ -121,8 +109,8 @@ module volume_ctrl import auris_pkg::*; #(
                     out_l_o <= '0;
                     out_r_o <= '0;
                 end else begin
-                    out_l_o <= sat24(scaled_l, ovf_l);
-                    out_r_o <= sat24(scaled_r, ovf_r);
+                    out_l_o <= scale_sat(mul_l);
+                    out_r_o <= scale_sat(mul_r);
                 end
             end
         end

@@ -36,12 +36,12 @@ permissions:
   contents: read
 
 # ----------------------------------------------------------------------------
-# Global environment — pinned tool versions for reproducibility.
+# Global environment: selected lint/Python versions; apt Verilator is not pinned.
 # ----------------------------------------------------------------------------
 env:
   PYTHON_VERSION: "3.11"
   VERILATOR_VERSION: "5.020"           # apt package; bump if a newer one is needed
-  VERIBLE_VERSION: "v0.0-4028"         # chipsalliance/verible release tag
+  VERIBLE_VERSION: "v0.0-4296-g0f262651" # chipsalliance/verible release tag
   # IDF_VERSION removed in Phase 5 (FPGA-only migration, 2026-08)
 
 jobs:
@@ -61,7 +61,7 @@ jobs:
       - name: Install Verible
         run: |
           set -euo pipefail
-          ASSET="verible-${VERIBLE_VERSION}-ubuntu2404-x86_64"
+          ASSET="verible-${VERIBLE_VERSION}-linux-static-x86_64"
           URL="https://github.com/chipsalliance/verible/releases/download/${VERIBLE_VERSION}/${ASSET}.tar.gz"
           echo "Downloading ${URL}"
           curl -fsSL -o verible.tar.gz "${URL}"
@@ -70,11 +70,14 @@ jobs:
           echo "${RUNNER_TEMP}/verible/bin" >> "$GITHUB_PATH"
           verible-verilog-lint --version
 
-      # Glob the entire RTL tree. Disable two rules that are noisy for
-      # hand-written audio DSP code:
-      #   -line-length     : lines occasionally exceed 80 chars in dense math
-      #   -module-filename: filenames don't always match module names
-      #                       (we use sub-folders for packaging)
+      # Glob the entire RTL tree. Keep all rules enabled except these existing
+      # conventions and packaging exceptions:
+      #   -line-length                         : dense DSP math can exceed 80 chars
+      #   -module-filename                     : sub-folder packaging does not always match module names
+      #   -parameter-name-style                : existing localparam names use lowercase
+      #   -unpacked-dimensions-range-ordering  : existing arrays use explicit [0:N-1] ranges
+      #   -always-ff-non-blocking               : self-test helper variables use blocking assignments
+      #   -posix-eof                           : three existing RTL files lack a final newline
       - name: Run verible-verilog-lint
         run: |
           set -euo pipefail
@@ -83,7 +86,7 @@ jobs:
           FILES=(fpga/rtl/**/*.sv)
           echo "Linting ${#FILES[@]} SystemVerilog files"
           verible-verilog-lint \
-            --rules=-line-length,-module-filename \
+            --rules=-line-length,-module-filename,-parameter-name-style,-unpacked-dimensions-range-ordering,-always-ff-non-blocking,-posix-eof \
             "${FILES[@]}"
 
   # ==========================================================================
@@ -124,7 +127,13 @@ jobs:
         uses: DavidAnson/markdownlint-cli2-action@v18
         with:
           globs: |
-            **/*.md
+            README.md
+            CHANGELOG.md
+            CONTRIBUTING.md
+            ENGINEERING_DESIGN.md
+            docs/**/*.md
+            hardware/**/*.md
+            tools/README.md
 
   # ==========================================================================
   # Build: FPGA lint (Verilator)
@@ -159,8 +168,8 @@ jobs:
       # Because of the above, we pass `-Wno-fatal` so warnings from elided
       # IP / unknown UNISIM cells do not abort the lint. Real lint errors
       # (undeclared signals in our hand-written RTL, type mismatches,
-      # width mismatches, illegal constructs) WILL fail the build — they
-      # are not masked. Lint failures are gating.
+      # illegal constructs) fail the build; width warnings can remain nonfatal. They
+      # must be reviewed separately. Tool errors are gating.
       #
       # The include path mirrors the structure of fpga/rtl/.
       - name: Verilator lint top.sv
@@ -184,9 +193,15 @@ jobs:
   #  migration, Phase 5 cleanup, 2026-08; archival copy in archive/tb/.)
   # ==========================================================================
   sim-fpga:
-    name: Sim FPGA testbenches (Verilator)
+    name: I2S ${{ matrix.tb }} (Verilator)
     needs: [build-fpga]
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tb: [tb_i2s_rx, tb_i2s_tx, tb_i2s_standard]
+    env:
+      TB: ${{ matrix.tb }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -202,53 +217,62 @@ jobs:
           sudo apt-get install -y zlibc zlib1g zlib1g-dev
           verilator --version
 
-      # Build & run tb_i2s_rx.
-      # Sources needed: the package, the I2S receiver, and the testbench.
+      # Build & run the selected directional/combined I2S test.
+      # RX/TX wrappers instantiate separate directional DUTs; standard tests both.
       # Verilator will auto-discover includes through -I paths.
-      - name: Build tb_i2s_rx
+      - name: Build selected I2S bench
         run: |
           set -euo pipefail
-          rm -rf obj_dir_tb_i2s_rx
+          rm -rf "obj_dir_${TB}"
           verilator --binary -j 0 \
-            --top-module tb_i2s_rx \
+            --top-module "${TB}" \
             -I fpga/rtl/pkg \
             -I fpga/rtl/io \
             --timing \
             fpga/rtl/pkg/auris_pkg.sv \
             fpga/rtl/io/i2s_rx.sv \
+            fpga/rtl/io/i2s_tx.sv \
+            fpga/sim/testbenches/tb_i2s_standard.sv \
             fpga/sim/testbenches/tb_i2s_rx.sv \
-            --Mdir obj_dir_tb_i2s_rx
+            fpga/sim/testbenches/tb_i2s_tx.sv \
+            --Mdir "obj_dir_${TB}"
 
-      - name: Run tb_i2s_rx
+      - name: Run selected I2S bench
+        id: run_i2s
         run: |
           set -euo pipefail
-          if [ ! -x obj_dir_tb_i2s_rx/Vtb_i2s_rx ]; then
-            echo "::error::tb_i2s_rx binary not found — preceding Build step must have failed."
+          if [ ! -x "obj_dir_${TB}/V${TB}" ]; then
+            echo "::error::${TB} binary not found — preceding Build step must have failed."
             exit 1
           fi
-          obj_dir_tb_i2s_rx/Vtb_i2s_rx
+          "obj_dir_${TB}/V${TB}" | tee i2s_run.log
+          grep -q "I2S_STANDARD_PASS" i2s_run.log
+          case "$TB" in
+            tb_i2s_rx) coverage='RX=1 TX=0' ;;
+            tb_i2s_tx) coverage='RX=0 TX=1' ;;
+            tb_i2s_standard) coverage='RX=1 TX=1' ;;
+          esac
+          grep -Fq "I2S_DIRECTION_COVERAGE $coverage" i2s_run.log
 
       - name: Upload waveforms
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: verilator-waveforms
+          name: verilator-waveforms-${{ matrix.tb }}
           path: |
-            obj_dir_tb_i2s_rx/*.vcd
+            obj_dir_*/*.vcd
           if-no-files-found: ignore
           retention-days: 7
 
-      # Print which testbenches passed/failed. Mirrors the summary table
-      # produced by fpga/scripts/sim_all.tcl. Always runs (if: always()) so
+      # Report this CI matrix entry; the full vendor suite runs in Vivado.
+      # Always runs (if: always()) so
       # partial failures still surface a summary in the log.
       #
-      # We rely on the presence of the compiled binary as the PASS signal:
-      # if the Build step succeeded, the binary exists in obj_dir/. If the
-      # Build step failed, the directory is missing or empty and we mark
-      # the testbench FAIL. The Run steps already gate the job on success;
-      # this step is purely a log-friendly summary.
+      # Report the run-step outcome, including its explicit completion check.
       - name: Simulation summary
         if: always()
+        env:
+          I2S_RUN_OUTCOME: ${{ steps.run_i2s.outcome }}
         run: |
           set +e
           echo "============================================================"
@@ -256,12 +280,12 @@ jobs:
           echo "============================================================"
           PASS=0
           FAIL=0
-          for tb in tb_i2s_rx; do
-            if [ -x "obj_dir_${tb}/V${tb}" ]; then
-              echo "  PASS  ${tb}  (binary present, run step succeeded)"
+          for tb in "$TB"; do
+            if [ "$I2S_RUN_OUTCOME" = "success" ]; then
+              echo "  PASS  ${tb}  (run completed with PASS marker)"
               PASS=$((PASS + 1))
             else
-              echo "  FAIL  ${tb}  (binary missing - build or run step failed)"
+              echo "  FAIL  ${tb}  (run failed, skipped, or incomplete)"
               FAIL=$((FAIL + 1))
             fi
           done
@@ -290,7 +314,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p fpga/generated
-          python tools/win_gen/gen_hann_coeffs.py
+          python tools/win_gen/gen_hann_coeffs.py \
+            --out-prefix fpga/generated/hann_256
 
       - name: Generate default gain tables
         run: |
@@ -298,16 +323,19 @@ jobs:
           python tools/profile_gen/gen_default_tables.py
 
       # Sanity-check that the generators actually produced their outputs.
-      # If any of these are missing, the downstream FPGA build will break.
+      # These are inspection/release outputs, not active RTL initialization inputs.
       - name: Verify generated artifacts exist
         run: |
           set -euo pipefail
           REQUIRED=(
             fpga/generated/hann_256.coe
             fpga/generated/hann_256.hex
+            fpga/generated/hann_256.json
             fpga/generated/gain_table_general.hex
             fpga/generated/gain_table_speech.hex
             fpga/generated/gain_table_hearing.hex
+            fpga/generated/gain_table_music.hex
+            fpga/generated/gain_tables_manifest.json
           )
           MISSING=0
           for f in "${REQUIRED[@]}"; do

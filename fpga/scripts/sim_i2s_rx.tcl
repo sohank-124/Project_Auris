@@ -48,6 +48,7 @@ set_property simulator_language Mixed   [current_project]
 #    2b. Testbench.
 # ---------------------------------------------------------------------------
 add_files -fileset sources_1 $rtl_dir
+add_files -fileset sim_1 [file join $sim_tb_dir tb_i2s_standard.sv]
 add_files -fileset sim_1     [glob -directory $sim_tb_dir tb_i2s_rx.sv]
 
 # ---------------------------------------------------------------------------
@@ -55,6 +56,8 @@ add_files -fileset sim_1     [glob -directory $sim_tb_dir tb_i2s_rx.sv]
 #    The RTL top is dummy (won't be elaborated); the sim top is tb_i2s_rx.
 # ---------------------------------------------------------------------------
 set_property top tb_i2s_rx [get_filesets sim_1]
+# Preserve the nested completion flag for the post-run Tcl query.
+set_property xsim.elaborate.debug_level typical [get_filesets sim_1]
 
 update_compile_order -fileset sources_1
 update_compile_order -fileset sim_1
@@ -63,17 +66,9 @@ update_compile_order -fileset sim_1
 # 4. Launch and run
 # ---------------------------------------------------------------------------
 puts "Launching xsim ..."
-launch_simulation
+source [file join $script_dir simulation_common.tcl]
+auris_run_simulation /tb_i2s_rx/checks/test_done {1 ms}
 
-# 1 ms is enough to exercise many LRCLK frames at 48 kHz while keeping
-# the wall-clock cost of the run in single-digit seconds.
-puts "Running 1 ms ..."
-run 1 ms
-
-# ---------------------------------------------------------------------------
-# 5. Tear down
-# ---------------------------------------------------------------------------
-close_sim -force
 close_project
 
 puts "============================================================"

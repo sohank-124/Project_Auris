@@ -25,6 +25,7 @@ from typing import List
 _HERE = Path(__file__).resolve().parent
 _TOOLS = _HERE.parent
 import sys
+
 if str(_TOOLS) not in sys.path:
     sys.path.insert(0, str(_TOOLS))
 
@@ -32,9 +33,9 @@ if str(_TOOLS) not in sys.path:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
-def octave_bands(fraction: int = 1,
-                 f_min: float = 20.0,
-                 f_max: float = 24000.0) -> List[float]:
+def octave_bands(
+    fraction: int = 1, f_min: float = 20.0, f_max: float = 24000.0
+) -> List[float]:
     """Return a list of ANSI S1.11 fractional-octave band centers.
 
     Parameters
@@ -65,18 +66,13 @@ def octave_bands(fraction: int = 1,
         raise ValueError(f"octave_bands: fraction must be >= 1 (got {fraction})")
     if f_min <= 0.0 or f_max <= 0.0:
         raise ValueError(
-            f"octave_bands: f_min and f_max must be positive "
-            f"(got {f_min}, {f_max})"
+            f"octave_bands: f_min and f_max must be positive (got {f_min}, {f_max})"
         )
     if f_min > f_max:
-        raise ValueError(
-            f"octave_bands: f_min ({f_min}) must be <= f_max ({f_max})"
-        )
+        raise ValueError(f"octave_bands: f_min ({f_min}) must be <= f_max ({f_max})")
 
     # The relationship between consecutive centers is a factor of
     # 10 ** (3 / (10 * fraction)) = 2 ** (1 / fraction).
-    factor = 10.0 ** (3.0 / (10.0 * fraction))
-
     # Solve for the indices that bracket [f_min, f_max] around 1000 Hz.
     # i_min = ceil(log10(f_min/1000) * 10 * fraction / 3)
     # i_max = floor(log10(f_max/1000) * 10 * fraction / 3)
@@ -109,14 +105,12 @@ def octave_bands(fraction: int = 1,
     return centers
 
 
-def third_octave_bands(f_min: float = 20.0,
-                       f_max: float = 24000.0) -> List[float]:
+def third_octave_bands(f_min: float = 20.0, f_max: float = 24000.0) -> List[float]:
     """Convenience wrapper for ``octave_bands(fraction=3, ...)``."""
     return octave_bands(fraction=3, f_min=f_min, f_max=f_max)
 
 
-def sixth_octave_bands(f_min: float = 20.0,
-                       f_max: float = 24000.0) -> List[float]:
+def sixth_octave_bands(f_min: float = 20.0, f_max: float = 24000.0) -> List[float]:
     """Convenience wrapper for ``octave_bands(fraction=6, ...)``."""
     return octave_bands(fraction=6, f_min=f_min, f_max=f_max)
 
@@ -173,8 +167,10 @@ def _write_text(out_path: Path, fraction: int, centers: List[float]) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", encoding="utf-8", newline="\n") as f:
         f.write(f"# Project Auris — ANSI S1.11 1/{fraction}-octave band centers\n")
-        f.write(f"# f_min={centers[0] if centers else '-'} Hz, "
-                f"f_max={centers[-1] if centers else '-'} Hz\n")
+        f.write(
+            f"# f_min={centers[0] if centers else '-'} Hz, "
+            f"f_max={centers[-1] if centers else '-'} Hz\n"
+        )
         f.write("idx,f_center_hz,ratio_to_1k\n")
         for i, c in enumerate(centers):
             f.write(f"{i},{c:.6f},{c / 1000.0:.9f}\n")
@@ -184,20 +180,34 @@ def main(argv: List[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         description="ANSI S1.11 fractional-octave band-center generator.",
     )
-    p.add_argument("--fraction", type=int, default=3, choices=(1, 3, 6, 12, 24),
-                   help="Octave fraction (default: %(default)s)")
-    p.add_argument("--f-min", type=float, default=20.0,
-                   help="Lower bound in Hz (default: %(default)s)")
-    p.add_argument("--f-max", type=float, default=24000.0,
-                   help="Upper bound in Hz (default: %(default)s)")
-    p.add_argument("--out", type=Path, default=None,
-                   help="Optional output file (CSV).")
+    p.add_argument(
+        "--fraction",
+        type=int,
+        default=3,
+        choices=(1, 3, 6, 12, 24),
+        help="Octave fraction (default: %(default)s)",
+    )
+    p.add_argument(
+        "--f-min",
+        type=float,
+        default=20.0,
+        help="Lower bound in Hz (default: %(default)s)",
+    )
+    p.add_argument(
+        "--f-max",
+        type=float,
+        default=24000.0,
+        help="Upper bound in Hz (default: %(default)s)",
+    )
+    p.add_argument("--out", type=Path, default=None, help="Optional output file (CSV).")
     args = p.parse_args(argv)
 
     centers = octave_bands(args.fraction, args.f_min, args.f_max)
-    print(f"Generated {len(centers)} band centers "
-          f"(1/{args.fraction} octave, "
-          f"{args.f_min:g}–{args.f_max:g} Hz)")
+    print(
+        f"Generated {len(centers)} band centers "
+        f"(1/{args.fraction} octave, "
+        f"{args.f_min:g}–{args.f_max:g} Hz)"
+    )
     _print_table(args.fraction, centers)
 
     if args.out is not None:

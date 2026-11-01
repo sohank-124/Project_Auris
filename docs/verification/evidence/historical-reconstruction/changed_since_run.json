@@ -1,0 +1,13 @@
+[
+  "fpga/rtl/clk_gen.sv",
+  "fpga/rtl/top.sv",
+  "fpga/rtl/ctrl/status_mon.sv",
+  "fpga/rtl/dsp/axis_stream_fifo.sv",
+  "fpga/rtl/dsp/dsp_pipeline.sv",
+  "fpga/rtl/dsp/output_buffer.sv",
+  "fpga/rtl/dsp/selftest_stimulus.sv",
+  "fpga/rtl/dsp/window_rom.sv",
+  "fpga/rtl/dsp/spectral/spectral_proc.sv",
+  "fpga/rtl/io/btn_debounce.sv",
+  "fpga/sim/testbenches/tb_pipeline_reconstruction.sv"
+]

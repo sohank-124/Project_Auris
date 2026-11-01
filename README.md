@@ -3,10 +3,6 @@
 An FPGA audio-processing prototype exploring frequency-dependent sound shaping. Auris is a solo project led by Sohan
 Kumar to study digital hardware and signal processing through an assistive-audio application.
 
-**Current status:** The FPGA audio prototype is assembled and running. The project owner has confirmed audio playback
-and recorded a demonstration of the hardware, mode selection and volume controls. Vivado builds and focused simulations
-accompany the implementation.
-
 ## At a glance
 
 | Platform | Implementation |
@@ -103,9 +99,6 @@ The hardware demonstration has been recorded. Place the video at `docs/media/aur
 See the [video folder and upload instructions](docs/media/README.md). [Video
 placeholder](docs/media/VIDEO_PLACEHOLDER.txt): after adding the MP4, change this link to `docs/media/auris-demo.mp4`.
 
-The demonstration uses deliberately exaggerated [frequency profiles](docs/hardware/DEMO_PROFILES.md) and
-button-controlled volume. Audio captured acoustically through headphones and a microphone illustrates the audible
-changes.
 
 ## Attribution
 

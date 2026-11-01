@@ -187,11 +187,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y verilator help2man perl python3 make autoconf g++ flex bison ccache
-          sudo apt-get install -y libgoogle-perftools-dev numactl perl-doc
-          sudo apt-get install -y libfl2  # Ubuntu only
-          sudo apt-get install -y libfl-dev  # Ubuntu only
-          sudo apt-get install -y zlibc zlib1g zlib1g-dev
+          sudo apt-get install -y verilator build-essential
           verilator --version
 
       # Build & run the selected directional/combined I2S test.

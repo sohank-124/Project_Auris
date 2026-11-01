@@ -1,4 +1,4 @@
-// Verilator lint-only interfaces; never use for synthesis or simulation.
+// Vendor interfaces for static lint only; never use for synthesis or simulation.
 `timescale 1ns/1ps
 
 module fft_256_core (

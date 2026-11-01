@@ -29,13 +29,11 @@ from common.formats import write_hex, write_txt_table
 try:
     from .gen_gain_profile import (
         audiogram_to_gain_table,
-        gain_table_to_fixed,
     )
 except ImportError:
     # Direct script execution — fall back to a path-based import.
     from gen_gain_profile import (
         audiogram_to_gain_table,
-        gain_table_to_fixed,
     )
 
 
@@ -135,8 +133,11 @@ def read_rtl_mode_words(source: Path | None = None) -> tuple[dict[str, list[int]
     text = re.sub(r"/\*.*?\*/|//[^\n]*", "", raw.decode("utf-8"), flags=re.S)
     result = {}
     for mode in ("general", "speech", "music", "hearing"):
-        pattern = (r"localparam\s+logic\s*\[15:0\]\s+GAIN_" + mode.upper()
-                   + r"\s*\[0:127\]\s*=\s*'\{([^}]+)\}\s*;")
+        pattern = (
+            r"localparam\s+logic\s*\[15:0\]\s+GAIN_"
+            + mode.upper()
+            + r"\s*\[0:127\]\s*=\s*'\{([^}]+)\}\s*;"
+        )
         matches = re.findall(pattern, text)
         if len(matches) != 1:
             raise ValueError(f"Expected exactly one 128-word RTL table for {mode}")
@@ -145,7 +146,9 @@ def read_rtl_mode_words(source: Path | None = None) -> tuple[dict[str, list[int]
             raise ValueError(f"Unsupported RTL table syntax or length for {mode}")
         words = [int(t) for t in tokens]
         if any(not 0 < word <= 65535 for word in words):
-            raise ValueError(f"Default {mode} words must be positive unsigned 16-bit gains")
+            raise ValueError(
+                f"Default {mode} words must be positive unsigned 16-bit gains"
+            )
         result[mode] = words
     return result, hashlib.sha256(raw).hexdigest()
 
@@ -161,8 +164,10 @@ def generate_all_modes(out_dir: Path, n_bins: int = N_BINS) -> Dict[str, List[fl
     if n_bins != 128:
         raise ValueError("Active RTL mode tables require 128 bins")
     words_by_mode, source_hash = read_rtl_mode_words()
-    tables = {name: [20 * math.log10(word / 16384) for word in words]
-              for name, words in words_by_mode.items()}
+    tables = {
+        name: [20 * math.log10(word / 16384) for word in words]
+        for name, words in words_by_mode.items()
+    }
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -194,13 +199,16 @@ def generate_all_modes(out_dir: Path, n_bins: int = N_BINS) -> Dict[str, List[fl
         print(f"  wrote {prefix}.hex  ({n_bins} entries, mode={name!r})")
 
     manifest = {
-        "source": "fpga/rtl/ctrl/mode_ctrl.sv", "source_sha256": source_hash,
-        "format": "unsigned 16-bit Q2.14", "entries_per_mode": 128,
+        "source": "fpga/rtl/ctrl/mode_ctrl.sv",
+        "source_sha256": source_hash,
+        "format": "unsigned 16-bit Q2.14",
+        "entries_per_mode": 128,
         "mode_ids": {name: i for i, name in enumerate(words_by_mode)},
         "role": "RTL inspection exports; current hardware does not load these files",
     }
     (out_dir / "gain_tables_manifest.json").write_text(
-        json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+    )
     return tables
 
 

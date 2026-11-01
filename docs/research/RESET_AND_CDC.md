@@ -47,4 +47,6 @@ digital simulation.
 
 Fractional BCLK has unequal edges; the [timing contract](../hardware/TIMING_CONTRACT.md) derives the reserved
 uncertainty. Provisional external microphone/wiring budgets are explicit assumptions, not measurements. Positive FPGA
-setup/hold results are conditional on those assumptions. See the [hardware demonstration record](../hardware/HARDWARE_VALIDATION.md) for board operation and the [implemented resource/timing reference](../architecture/resource_budget.md) for implementation results.
+setup/hold results are conditional on those assumptions. See the [hardware demonstration
+record](../hardware/HARDWARE_VALIDATION.md) for board operation and the [implemented resource/timing
+reference](../architecture/resource_budget.md) for implementation results.

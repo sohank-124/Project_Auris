@@ -119,7 +119,7 @@ class RunnerContractTests(unittest.TestCase):
                 log.write_text("Simulation completed\n")
                 tcl.setvar("fixture_dir", fixture.as_posix())
                 tcl.eval(
-                    'proc get_property {key object} {'
+                    "proc get_property {key object} {"
                     'if {$key eq "DIRECTORY"} {return $::fixture_dir}; return fixture}'
                 )
                 tcl.setvar(

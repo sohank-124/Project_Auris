@@ -24,10 +24,15 @@ from common.constants import FS, N_FFT
 
 
 def _valid_samples(values, length):
-    return len(values) == length and length > 0 and all(
-        math.isfinite(complex(v).real) and math.isfinite(complex(v).imag)
-        for v in values
+    return (
+        len(values) == length
+        and length > 0
+        and all(
+            math.isfinite(complex(v).real) and math.isfinite(complex(v).imag)
+            for v in values
+        )
     )
+
 
 try:
     from .gen_fft import reference_dft

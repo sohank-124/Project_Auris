@@ -26,7 +26,8 @@ Critical setup runs from volume_level_reg[0] through volume gain arithmetic to a
 margin. Critical hold is inside the encrypted IFFT: 0.318 ns data delay, 0.148 ns cell and 0.170 ns route. The positive
 hold margin is small but meets the modeled requirement.
 
-In plain language, the implemented FPGA meets the saved timing model. The external interface budgets are recorded in the [hardware timing contract](../hardware/TIMING_CONTRACT.md).
+In plain language, the implemented FPGA meets the saved timing model. The external interface budgets are recorded in the
+[hardware timing contract](../hardware/TIMING_CONTRACT.md).
 
 No extra pipeline stage is proposed. Registering a long combinational path can split setup delay but adds cycles,
 registers, alignment checks, and architectural obligations; it is not a general fix for a short hold path or an

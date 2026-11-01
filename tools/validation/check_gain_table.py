@@ -152,7 +152,7 @@ def validate_gain_table(gains_db: List[float], audiogram: List[float] = None) ->
     first_bin = math.ceil(1000 * N_FFT / FS)
     last_bin = math.floor(4000 * N_FFT / FS)
     mono_ok, n_mono_viol = check_monotonicity(
-        gains_db[first_bin:last_bin + 1], expected_direction="increasing"
+        gains_db[first_bin : last_bin + 1], expected_direction="increasing"
     )
 
     checks: Dict = {

@@ -35,7 +35,7 @@ def markdown_anchors(path: Path) -> set[str]:
         count = counts.get(slug, 0)
         anchors.add(f"{slug}-{count}" if count else slug)
         counts[slug] = count + 1
-    anchors.update(re.findall(r'(?:id|name)=[\"\']([^\"\']+)', text))
+    anchors.update(re.findall(r"(?:id|name)=[\"\']([^\"\']+)", text))
     return anchors
 
 

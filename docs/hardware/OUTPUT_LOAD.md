@@ -14,4 +14,5 @@ headphone amplifier -> headphones. If the breakout already includes an amplifier
 its schematic must identify that stage and its permitted headphone impedance.
 A 3.5 mm connector is not evidence of an amplifier.
 
-Document the breakout output stage, amplifier (if present), permitted load, supply and wiring alongside the hardware record.
+Document the breakout output stage, amplifier (if present), permitted load, supply and wiring alongside the hardware
+record.

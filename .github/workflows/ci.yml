@@ -68,7 +68,7 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/verible"
           tar -xzf verible.tar.gz -C "${RUNNER_TEMP}/verible" --strip-components=1
           echo "${RUNNER_TEMP}/verible/bin" >> "$GITHUB_PATH"
-          verible-verilog-lint --version
+          "${RUNNER_TEMP}/verible/bin/verible-verilog-lint" --version
 
       # Glob the entire RTL tree. Keep all rules enabled except these existing
       # conventions and packaging exceptions:

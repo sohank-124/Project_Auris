@@ -94,8 +94,7 @@ These entry points have recorded execution evidence and were inspected, not reru
 is Vivado 2026.1; other versions are not certified. Outputs go under `fpga/vivado_proj/`.
 
 [Reproduction commands](docs/verification/REPRODUCING.md) cover the HDL suite, reconstruction, and a Python/Tcl runner
-test without Vivado. Actions checks lint, selected I²S simulations, and exports, not full vendor-IP verification or FPGA
-implementation.
+test without Vivado. Actions runs source lint and coefficient-export checks. I²S simulations run locally through the Vivado scripts.
 
 ## Demonstration video
 

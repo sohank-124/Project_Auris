@@ -6,9 +6,9 @@
 # Job graph (arrows = "needs"):
 #
 #   lint-sv ─┐
-#   lint-py ─┼─► build-fpga ──► sim-fpga
+#   lint-py ─┼─► build-fpga
 #   lint-md ─┘                │
-#                            run-tools (parallel w/ sim)
+#                            run-tools (parallel)
 #                            ci-pass (always, last)
 #
 # Note: lint-c / build-esp32 jobs were removed during the FPGA-only migration
@@ -165,108 +165,6 @@ jobs:
             fpga/sim/lint/vendor_interfaces.sv "${RTL[@]}"
 
   # ==========================================================================
-  # Sim: run the critical IP-level testbench with Verilator
-  # (tb_spi_slave was retired with the SPI interface in the FPGA-only
-  #  migration, Phase 5 cleanup, 2026-08; archival copy in archive/tb/.)
-  # ==========================================================================
-  sim-fpga:
-    name: I2S ${{ matrix.tb }} (Verilator)
-    needs: [build-fpga]
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        tb: [tb_i2s_rx, tb_i2s_tx, tb_i2s_standard]
-    env:
-      TB: ${{ matrix.tb }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Verilator
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y verilator build-essential
-          verilator --version
-
-      # Build & run the selected directional/combined I2S test.
-      # RX/TX wrappers instantiate separate directional DUTs; standard tests both.
-      # Verilator will auto-discover includes through -I paths.
-      - name: Build selected I2S bench
-        run: |
-          set -euo pipefail
-          rm -rf "obj_dir_${TB}"
-          verilator --binary -j 0 \
-            --top-module "${TB}" \
-            -Ifpga/rtl/pkg \
-            -Ifpga/rtl/io \
-            --timing \
-            fpga/rtl/pkg/auris_pkg.sv \
-            fpga/rtl/io/i2s_rx.sv \
-            fpga/rtl/io/i2s_tx.sv \
-            fpga/sim/testbenches/tb_i2s_standard.sv \
-            fpga/sim/testbenches/tb_i2s_rx.sv \
-            fpga/sim/testbenches/tb_i2s_tx.sv \
-            --Mdir "obj_dir_${TB}"
-
-      - name: Run selected I2S bench
-        id: run_i2s
-        run: |
-          set -euo pipefail
-          if [ ! -x "obj_dir_${TB}/V${TB}" ]; then
-            echo "::error::${TB} binary not found — preceding Build step must have failed."
-            exit 1
-          fi
-          "obj_dir_${TB}/V${TB}" | tee i2s_run.log
-          grep -q "I2S_STANDARD_PASS" i2s_run.log
-          case "$TB" in
-            tb_i2s_rx) coverage='RX=1 TX=0' ;;
-            tb_i2s_tx) coverage='RX=0 TX=1' ;;
-            tb_i2s_standard) coverage='RX=1 TX=1' ;;
-          esac
-          grep -Fq "I2S_DIRECTION_COVERAGE $coverage" i2s_run.log
-
-      - name: Upload waveforms
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: verilator-waveforms-${{ matrix.tb }}
-          path: |
-            obj_dir_*/*.vcd
-          if-no-files-found: ignore
-          retention-days: 7
-
-      # Report this CI matrix entry; the full vendor suite runs in Vivado.
-      # Always runs (if: always()) so
-      # partial failures still surface a summary in the log.
-      #
-      # Report the run-step outcome, including its explicit completion check.
-      - name: Simulation summary
-        if: always()
-        env:
-          I2S_RUN_OUTCOME: ${{ steps.run_i2s.outcome }}
-        run: |
-          set +e
-          echo "============================================================"
-          echo "  Sim FPGA testbenches - summary"
-          echo "============================================================"
-          PASS=0
-          FAIL=0
-          for tb in "$TB"; do
-            if [ "$I2S_RUN_OUTCOME" = "success" ]; then
-              echo "  PASS  ${tb}  (run completed with PASS marker)"
-              PASS=$((PASS + 1))
-            else
-              echo "  FAIL  ${tb}  (run failed, skipped, or incomplete)"
-              FAIL=$((FAIL + 1))
-            fi
-          done
-          echo "------------------------------------------------------------"
-          echo "  ${PASS} passed, ${FAIL} failed"
-          echo "============================================================"
-
-  # ==========================================================================
   # Run: Python toolchain (coefficient / table generators)
   # ==========================================================================
   run-tools:
@@ -341,7 +239,6 @@ jobs:
       - lint-python
       - lint-markdown
       - build-fpga
-      - sim-fpga
       - run-tools
     # Always run so the workflow reports a single green/red status even if a
     # previous job was skipped (e.g. via `if: false` on a draft PR).
@@ -358,7 +255,6 @@ jobs:
             ["lint-python"]="${{ needs.lint-python.result }}"
             ["lint-markdown"]="${{ needs.lint-markdown.result }}"
             ["build-fpga"]="${{ needs.build-fpga.result }}"
-            ["sim-fpga"]="${{ needs.sim-fpga.result }}"
             ["run-tools"]="${{ needs.run-tools.result }}"
           )
 

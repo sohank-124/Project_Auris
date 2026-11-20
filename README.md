@@ -94,9 +94,7 @@ test without Vivado. Automatic push and pull-request checks are disabled. Verifi
 
 ## Demonstration video
 
-The hardware demonstration has been recorded. Place the video at `docs/media/auris-demo.mp4`.
-See the [video folder and upload instructions](docs/media/README.md). [Video
-placeholder](docs/media/VIDEO_PLACEHOLDER.txt): after adding the MP4, change this link to `docs/media/auris-demo.mp4`.
+The hardware demonstration has been recorded. Watch the video at `docs/media/auris-demo.mp4`.
 
 
 ## Attribution
